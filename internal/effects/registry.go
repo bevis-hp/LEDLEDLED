@@ -7,6 +7,7 @@ package effects
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 
 	"ledledled/internal/pixel"
@@ -19,6 +20,7 @@ const (
 	Number ParamType = "number"
 	Color  ParamType = "color"
 	Bool   ParamType = "bool"
+	Select ParamType = "select" // one of Options
 )
 
 // ParamDef describes one effect parameter.
@@ -30,11 +32,15 @@ type ParamDef struct {
 	Min     float64   `json:"min,omitempty"`
 	Max     float64   `json:"max,omitempty"`
 	Step    float64   `json:"step,omitempty"`
+	Options []string  `json:"options,omitempty"`
 }
 
 // Context is passed to an effect each frame.
 type Context struct {
-	Time   float64 // seconds since the engine started
+	// Time drives the animation. It is seconds, or beats when the layer
+	// is tempo-synced, so "1 cycle per second" becomes "1 cycle per beat".
+	Time   float64
+	Beat   float64 // global beat position (always beats)
 	Params Params
 }
 
@@ -85,7 +91,7 @@ func FillDefaults(name string, params map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(d.Params))
 	for _, p := range d.Params {
 		v, ok := params[p.Name]
-		if !ok || !typeMatches(p.Type, v) {
+		if !ok || !TypeMatches(p, v) {
 			v = p.Default
 		}
 		out[p.Name] = v
@@ -93,8 +99,19 @@ func FillDefaults(name string, params map[string]any) (map[string]any, error) {
 	return out, nil
 }
 
-func typeMatches(t ParamType, v any) bool {
-	switch t {
+// Param returns the definition of a named parameter.
+func (d *Def) Param(name string) (ParamDef, bool) {
+	for _, p := range d.Params {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return ParamDef{}, false
+}
+
+// TypeMatches reports whether v is a valid value for parameter p.
+func TypeMatches(p ParamDef, v any) bool {
+	switch p.Type {
 	case Number:
 		_, ok := v.(float64)
 		return ok
@@ -108,6 +125,9 @@ func typeMatches(t ParamType, v any) bool {
 	case Bool:
 		_, ok := v.(bool)
 		return ok
+	case Select:
+		s, ok := v.(string)
+		return ok && slices.Contains(p.Options, s)
 	}
 	return false
 }

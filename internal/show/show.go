@@ -15,10 +15,18 @@ import (
 // Show is the complete, persisted state of the installation.
 type Show struct {
 	Settings    Settings     `json:"settings"`
+	Tempo       Tempo        `json:"tempo"`
 	Controllers []Controller `json:"controllers"`
 	Strips      []Strip      `json:"strips"`
 	Groups      []Group      `json:"groups"`
 	Layers      []Layer      `json:"layers"`
+}
+
+// Tempo is the beat clock's saved state. The live BPM (tap tempo, audio
+// detection) is runtime state in the engine; it is written back here when
+// the show is saved and restored when a show is loaded.
+type Tempo struct {
+	BPM float64 `json:"bpm"`
 }
 
 // Settings are global output settings.
@@ -97,6 +105,9 @@ type Layer struct {
 	Opacity float64        `json:"opacity"` // 0..1
 	Blend   string         `json:"blend"`   // see BlendModes
 	Muted   bool           `json:"muted"`
+	// TempoSync feeds the effect beats instead of seconds, so speeds and
+	// rates become "per beat" and follow tap tempo / detected BPM.
+	TempoSync bool `json:"tempoSync"`
 }
 
 // BlendModes are the supported layer blend modes.

@@ -15,6 +15,7 @@ import (
 	"ledledled/internal/output"
 	"ledledled/internal/pixel"
 	"ledledled/internal/show"
+	"ledledled/internal/tempo"
 )
 
 // previewHz is the target rate of preview frames sent to the UI.
@@ -28,6 +29,7 @@ type Engine struct {
 	txOpts  output.Options
 	start   time.Time
 	version uint64
+	clock   *tempo.Clock
 
 	outputOn bool
 	blackout bool
@@ -59,12 +61,29 @@ func New(s *show.Show) (*Engine, error) {
 		stats:    map[string]*ctrlStats{},
 		subs:     map[chan []byte]struct{}{},
 		reset:    make(chan struct{}, 1),
+		clock:    tempo.New(120),
 	}
-	if err := e.Apply(s); err != nil {
+	if err := e.Load(s); err != nil {
 		return nil, err
 	}
 	return e, nil
 }
+
+// Load replaces the show like Apply, and also restores its saved tempo.
+// Use it for startup and library loads; Apply is for live edits, which
+// must not reset a tempo that was just tapped in.
+func (e *Engine) Load(s *show.Show) error {
+	if err := e.Apply(s); err != nil {
+		return err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.clock.SetBPM(e.now(), e.plan.show.Tempo.BPM)
+	return nil
+}
+
+// now is the engine clock in seconds.
+func (e *Engine) now() float64 { return time.Since(e.start).Seconds() }
 
 // Apply swaps in a new show. On error the running show is unchanged.
 func (e *Engine) Apply(s *show.Show) error {
@@ -111,11 +130,27 @@ func (e *Engine) Apply(s *show.Show) error {
 	return nil
 }
 
-// Show returns a copy of the active show.
+// Show returns a copy of the active show, including the live tempo.
 func (e *Engine) Show() *show.Show {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	return e.plan.show.Clone()
+	s := e.plan.show.Clone()
+	s.Tempo.BPM = e.clock.BPM()
+	return s
+}
+
+// Tap registers a tap-tempo tap now.
+func (e *Engine) Tap() {
+	e.mu.Lock()
+	e.clock.Tap(e.now())
+	e.mu.Unlock()
+}
+
+// SetBPM sets the tempo directly.
+func (e *Engine) SetBPM(bpm float64) {
+	e.mu.Lock()
+	e.clock.SetBPM(e.now(), bpm)
+	e.mu.Unlock()
 }
 
 // SetOutput enables or disables network output. Disabling sends sACN
@@ -185,7 +220,7 @@ func (e *Engine) frame(now time.Time, preview bool) {
 	p := e.plan
 	t := now.Sub(e.start).Seconds()
 
-	e.render(p, t, now)
+	e.render(p, t, e.clock.Beat(t), now)
 
 	if e.outputOn {
 		e.send(p)
@@ -202,14 +237,17 @@ func (e *Engine) frame(now time.Time, preview bool) {
 }
 
 // render evaluates and composites all layers into the strip buffers.
-func (e *Engine) render(p *plan, t float64, now time.Time) {
+func (e *Engine) render(p *plan, t, beat float64, now time.Time) {
 	for i := range p.strips {
 		clear(p.strips[i].px)
 	}
 	if !e.blackout {
 		for i := range p.layers {
 			l := &p.layers[i]
-			ctx := effects.Context{Time: t, Params: l.params}
+			ctx := effects.Context{Time: t, Beat: beat, Params: l.params}
+			if l.tempoSync {
+				ctx.Time = beat
+			}
 			l.def.Render(&ctx, l.buf)
 			for j, ref := range l.targets {
 				dst := &p.strips[ref.strip].px[ref.idx]
@@ -371,6 +409,8 @@ type Status struct {
 	OutputOn    bool               `json:"outputOn"`
 	Blackout    bool               `json:"blackout"`
 	FPS         float64            `json:"fps"`
+	BPM         float64            `json:"bpm"`
+	Beat        float64            `json:"beat"`
 	Controllers []ControllerStatus `json:"controllers"`
 }
 
@@ -390,7 +430,8 @@ type ControllerStatus struct {
 func (e *Engine) Status() Status {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	s := Status{Version: e.version, OutputOn: e.outputOn, Blackout: e.blackout, FPS: e.fps}
+	s := Status{Version: e.version, OutputOn: e.outputOn, Blackout: e.blackout, FPS: e.fps,
+		BPM: e.clock.BPM(), Beat: e.clock.Beat(e.now())}
 	for _, c := range e.plan.controllers {
 		st := e.statsFor(c.id)
 		s.Controllers = append(s.Controllers, ControllerStatus{

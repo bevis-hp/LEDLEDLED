@@ -33,12 +33,14 @@ type stripPlan struct {
 type pixelRef struct{ strip, idx int32 }
 
 type layerPlan struct {
-	def     *effects.Def
-	params  effects.Params
-	opacity float32
-	blend   blendFunc
-	targets []pixelRef    // group pixels in group order
-	buf     []pixel.Color // effect output, len(targets)
+	id        string
+	tempoSync bool
+	def       *effects.Def
+	params    effects.Params
+	opacity   float32
+	blend     blendFunc
+	targets   []pixelRef    // group pixels in group order
+	buf       []pixel.Color // effect output, len(targets)
 }
 
 type ctrlPlan struct {
@@ -123,12 +125,14 @@ func compile(s *show.Show) (*plan, error) {
 			}
 		}
 		p.layers = append(p.layers, layerPlan{
-			def:     def,
-			params:  effects.NewParams(def, l.Params),
-			opacity: float32(l.Opacity),
-			blend:   blendFuncs[l.Blend],
-			targets: targets,
-			buf:     make([]pixel.Color, len(targets)),
+			id:        l.ID,
+			tempoSync: l.TempoSync,
+			def:       def,
+			params:    effects.NewParams(def, l.Params),
+			opacity:   float32(l.Opacity),
+			blend:     blendFuncs[l.Blend],
+			targets:   targets,
+			buf:       make([]pixel.Color, len(targets)),
 		})
 	}
 

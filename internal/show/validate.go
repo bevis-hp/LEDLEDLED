@@ -29,6 +29,10 @@ func (s *Show) Normalize() {
 	if st.Priority <= 0 || st.Priority > 200 {
 		st.Priority = 100
 	}
+	if s.Tempo.BPM <= 0 {
+		s.Tempo.BPM = 120
+	}
+	s.Tempo.BPM = clamp(s.Tempo.BPM, 20, 300)
 	if _, err := ParseCID(st.CID); err != nil {
 		cid := output.NewCID()
 		st.CID = hex.EncodeToString(cid[:])

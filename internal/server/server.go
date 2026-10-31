@@ -61,6 +61,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/output", s.postToggle(s.eng.SetOutput))
 	mux.HandleFunc("POST /api/blackout", s.postToggle(s.eng.SetBlackout))
 	mux.HandleFunc("POST /api/identify", s.postIdentify)
+	mux.HandleFunc("POST /api/tempo/tap", s.postTap)
+	mux.HandleFunc("POST /api/tempo", s.postTempo)
 	mux.HandleFunc("GET /ws", s.ws)
 	mux.Handle("/", s.static())
 	return logRequests(mux)
@@ -137,6 +139,25 @@ func (s *Server) postIdentify(w http.ResponseWriter, r *http.Request) {
 	}
 	s.eng.Identify(body.StripID, time.Duration(body.Seconds*float64(time.Second)))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) postTap(w http.ResponseWriter, r *http.Request) {
+	s.eng.Tap()
+	s.saver.Schedule(s.eng.Show()) // persist the tapped BPM
+	writeJSON(w, http.StatusOK, s.eng.Status())
+}
+
+func (s *Server) postTempo(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		BPM float64 `json:"bpm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.eng.SetBPM(body.BPM)
+	s.saver.Schedule(s.eng.Show())
+	writeJSON(w, http.StatusOK, s.eng.Status())
 }
 
 // ws streams binary preview frames and JSON show updates to the browser.

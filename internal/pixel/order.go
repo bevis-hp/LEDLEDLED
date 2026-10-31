@@ -98,7 +98,7 @@ func (o Order) Encode(dst []byte, px []Color, opt EncodeOptions) {
 
 // Gamma is a precomputed lookup table for perceptual brightness correction.
 type Gamma struct {
-	lut   [4096]uint8
+	lut [4096]uint8
 }
 
 // NewGamma builds a gamma table. g <= 1 means linear.

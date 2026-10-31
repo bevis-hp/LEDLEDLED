@@ -114,3 +114,25 @@ func TestPreviewFrameFormat(t *testing.T) {
 		t.Fatalf("preview frame = %v", f)
 	}
 }
+
+func TestApplyKeepsTempoButLoadRestoresIt(t *testing.T) {
+	s, _ := testShow(t)
+	s.Tempo.BPM = 100
+	e, err := New(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.SetBPM(140)
+	if err := e.Apply(s); err != nil { // live edit carrying the old 100 BPM
+		t.Fatal(err)
+	}
+	if got := e.Show().Tempo.BPM; got != 140 {
+		t.Errorf("after Apply bpm = %v, want 140 (unchanged)", got)
+	}
+	if err := e.Load(s); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Show().Tempo.BPM; got != 100 {
+		t.Errorf("after Load bpm = %v, want 100", got)
+	}
+}
