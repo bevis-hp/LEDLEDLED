@@ -15,11 +15,13 @@ import (
 
 	"github.com/coder/websocket"
 
+	"ledledled/internal/audio"
 	"ledledled/internal/effects"
 	"ledledled/internal/engine"
 	"ledledled/internal/output"
 	"ledledled/internal/pixel"
 	"ledledled/internal/show"
+	"ledledled/internal/timeline"
 )
 
 // Server wires HTTP handlers to the engine.
@@ -64,6 +66,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tempo/tap", s.postTap)
 	mux.HandleFunc("POST /api/tempo", s.postTempo)
 	mux.HandleFunc("POST /api/transport", s.postTransport)
+	mux.HandleFunc("GET /api/audio/devices", s.getAudioDevices)
 	mux.HandleFunc("GET /ws", s.ws)
 	mux.Handle("/", s.static())
 	return logRequests(mux)
@@ -97,6 +100,8 @@ type meta struct {
 	ColorOrders []string          `json:"colorOrders"`
 	BlendModes  []string          `json:"blendModes"`
 	Protocols   []output.Protocol `json:"protocols"`
+	Eases       []string          `json:"eases"`
+	ModSources  []string          `json:"modSources"`
 }
 
 func (s *Server) getMeta(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +110,13 @@ func (s *Server) getMeta(w http.ResponseWriter, r *http.Request) {
 		ColorOrders: pixel.SupportedOrders,
 		BlendModes:  show.BlendModes,
 		Protocols:   []output.Protocol{output.SACN, output.ArtNet},
+		Eases:       timeline.Eases,
+		ModSources:  show.ModSources,
 	})
+}
+
+func (s *Server) getAudioDevices(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, audio.Devices())
 }
 
 func (s *Server) getStatus(w http.ResponseWriter, r *http.Request) {

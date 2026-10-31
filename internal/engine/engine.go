@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"ledledled/internal/audio"
 	"ledledled/internal/effects"
 	"ledledled/internal/output"
 	"ledledled/internal/pixel"
@@ -34,7 +35,10 @@ type Engine struct {
 	version uint64
 	clock   *tempo.Clock
 	tr      transport
-	tlPos   float64 // timeline playhead at the last frame
+	audio   *audio.Manager
+	feat    audio.Features // latest audio analysis, refreshed every frame
+	beats   uint64         // last seen audio beat count
+	tlPos   float64        // timeline playhead at the last frame
 
 	outputOn bool
 	blackout bool
@@ -68,6 +72,7 @@ func New(s *show.Show) (*Engine, error) {
 		subs:     map[chan Message]struct{}{},
 		reset:    make(chan struct{}, 1),
 		clock:    tempo.New(120),
+		audio:    audio.NewManager(),
 	}
 	if err := e.Load(s); err != nil {
 		return nil, err
@@ -109,6 +114,17 @@ func (e *Engine) Apply(s *show.Show) error {
 	}
 	opts.CID, _ = show.ParseCID(s.Settings.CID)
 
+	if err := e.swap(p, opts); err != nil {
+		return err
+	}
+	a := s.Settings.Audio
+	e.audio.Configure(audio.Config{Enabled: a.Enabled, Device: a.Device, Gain: a.Gain})
+	return nil
+}
+
+// swap installs a compiled plan (and a new socket if output options changed).
+func (e *Engine) swap(p *plan, opts output.Options) error {
+	s := p.show
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.tx == nil || opts != e.txOpts {
@@ -207,6 +223,7 @@ func (e *Engine) Run(ctx context.Context) {
 				}
 				e.tx.Close()
 				e.mu.Unlock()
+				e.audio.Stop()
 				return
 			case <-e.reset:
 				ticker.Stop()
@@ -226,6 +243,8 @@ func (e *Engine) frame(now time.Time, preview bool) {
 	p := e.plan
 	t := now.Sub(e.start).Seconds()
 
+	e.feat = e.audio.Latest()
+	e.followAudioTempo(p, t)
 	beat := e.clock.Beat(t)
 	e.resolveParams(p, beat)
 	e.render(p, t, beat, now)
@@ -247,8 +266,41 @@ func (e *Engine) frame(now time.Time, preview bool) {
 	}
 }
 
+// followAudioTempo locks the beat clock to detected audio beats when
+// auto-BPM is on: the tempo glides towards the detected BPM and each
+// detected beat close to a predicted beat nudges the phase.
+func (e *Engine) followAudioTempo(p *plan, t float64) {
+	f := &e.feat
+	newBeat := f.BeatCount != e.beats
+	e.beats = f.BeatCount
+	if !p.show.Settings.Audio.AutoBPM || f.BPM <= 0 {
+		return
+	}
+	if cur := e.clock.BPM(); math.Abs(cur-f.BPM) > 0.05 {
+		e.clock.SetBPM(t, cur+(f.BPM-cur)*0.05)
+	}
+	if newBeat {
+		at := t - f.BeatAge
+		b := e.clock.Beat(at)
+		if math.Abs(b-math.Round(b)) < 0.25 { // ignore off-beat hits
+			e.clock.Nudge(at, 0.2)
+		}
+	}
+}
+
+// modSource returns a modulation source's current value (0..1).
+func (e *Engine) modSource(name string, beat float64) float64 {
+	switch name {
+	case "pulse":
+		return math.Exp(-(beat - math.Floor(beat)) * 6)
+	case "phase":
+		return beat - math.Floor(beat)
+	}
+	return e.feat.Get(name)
+}
+
 // resolveParams sets this frame's parameter overrides: timeline keyframes
-// at the current playhead.
+// at the current playhead, then modulators on top, then master modulation.
 func (e *Engine) resolveParams(p *plan, beat float64) {
 	for i := range p.layers {
 		p.layers[i].params.ClearOverrides()
@@ -272,6 +324,21 @@ func (e *Engine) resolveParams(p *plan, beat float64) {
 			l.params.OverrideNum(tp.param, num)
 		}
 	}
+	for i := range p.layers {
+		l := &p.layers[i]
+		for _, m := range l.mods {
+			v := m.Min + (m.Max-m.Min)*e.modSource(m.Source, beat)
+			if m.Param == "opacity" {
+				l.opNow = float32(math.Max(0, math.Min(1, v)))
+			} else {
+				l.params.OverrideNum(m.Param, v)
+			}
+		}
+	}
+	p.masterK = 1
+	if mm := p.show.Settings.MasterMod; mm.Source != "" {
+		p.masterK = float32(1 - mm.Amount*(1-e.modSource(mm.Source, beat)))
+	}
 }
 
 // render evaluates and composites all layers into the strip buffers.
@@ -282,7 +349,7 @@ func (e *Engine) render(p *plan, t, beat float64, now time.Time) {
 	if !e.blackout {
 		for i := range p.layers {
 			l := &p.layers[i]
-			ctx := effects.Context{Time: t, Beat: beat, Params: l.params}
+			ctx := effects.Context{Time: t, Beat: beat, Audio: &e.feat, Params: l.params}
 			if l.tempoSync {
 				ctx.Time = beat
 			}
@@ -330,7 +397,7 @@ func identifyPattern(px []pixel.Color, now time.Time) {
 // encode converts every strip into its controller's channel stream,
 // applying brightness, gamma, white extraction and the power limit.
 func (e *Engine) encode(p *plan) {
-	master := float32(p.show.Settings.Brightness)
+	master := float32(p.show.Settings.Brightness) * p.masterK
 	for ci := range p.controllers {
 		c := &p.controllers[ci]
 		for _, sp := range c.strips {
@@ -429,7 +496,7 @@ func (e *Engine) encodePreview(p *plan) []byte {
 		binary.LittleEndian.PutUint16(buf[off:], uint16(len(s.px)))
 		off += 2
 	}
-	master := float32(p.show.Settings.Brightness)
+	master := float32(p.show.Settings.Brightness) * p.masterK
 	for _, s := range p.strips {
 		k := master * s.brightness
 		if s.scale < 1 {
@@ -479,10 +546,11 @@ func (e *Engine) publish(frame Message) {
 
 // liveMsg is the ~20 Hz JSON update for animated UI elements.
 type liveMsg struct {
-	Type     string     `json:"type"`
-	BPM      float64    `json:"bpm"`
-	Beat     float64    `json:"beat"`
-	Timeline liveTLInfo `json:"timeline"`
+	Type     string          `json:"type"`
+	BPM      float64         `json:"bpm"`
+	Beat     float64         `json:"beat"`
+	Timeline liveTLInfo      `json:"timeline"`
+	Audio    *audio.Features `json:"audio,omitempty"` // only while audio is enabled
 }
 
 type liveTLInfo struct {
@@ -492,10 +560,14 @@ type liveTLInfo struct {
 }
 
 func (e *Engine) encodeLive(p *plan, beat float64) []byte {
-	b, _ := json.Marshal(liveMsg{
+	m := liveMsg{
 		Type: "live", BPM: e.clock.BPM(), Beat: beat,
 		Timeline: liveTLInfo{Playing: e.tr.playing, Pos: e.tlPos, Length: p.show.Timeline.LengthBeats},
-	})
+	}
+	if p.show.Settings.Audio.Enabled {
+		m.Audio = &e.feat
+	}
+	b, _ := json.Marshal(m)
 	return b
 }
 
@@ -509,6 +581,7 @@ type Status struct {
 	Beat        float64            `json:"beat"`
 	Controllers []ControllerStatus `json:"controllers"`
 	Strips      []StripStatus      `json:"strips"`
+	Audio       audio.Status       `json:"audio"`
 }
 
 // StripStatus reports estimated power over the last second.
@@ -537,7 +610,7 @@ func (e *Engine) Status() Status {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	s := Status{Version: e.version, OutputOn: e.outputOn, Blackout: e.blackout, FPS: e.fps,
-		BPM: e.clock.BPM(), Beat: e.clock.Beat(e.now())}
+		BPM: e.clock.BPM(), Beat: e.clock.Beat(e.now()), Audio: e.audio.Status()}
 	for _, c := range e.plan.controllers {
 		st := e.statsFor(c.id)
 		s.Controllers = append(s.Controllers, ControllerStatus{

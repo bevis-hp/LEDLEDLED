@@ -62,6 +62,40 @@ type Settings struct {
 	SourceName string  `json:"sourceName"` // sACN source name
 	Priority   int     `json:"priority"`   // sACN priority 0-200
 	CID        string  `json:"cid"`        // sACN component ID (hex), generated once
+
+	Audio AudioSettings `json:"audio"`
+	// MasterMod makes the master brightness follow a modulation source,
+	// e.g. "beat" with amount 0.8 flashes everything on each beat.
+	MasterMod MasterMod `json:"masterMod"`
+}
+
+// AudioSettings configure the audio input used for reactivity.
+type AudioSettings struct {
+	Enabled bool    `json:"enabled"`
+	Device  string  `json:"device"`  // ALSA device, e.g. "default", "plughw:1,0", or "sim"
+	Gain    float64 `json:"gain"`    // sensitivity after auto-gain, default 1
+	AutoBPM bool    `json:"autoBpm"` // follow the detected tempo
+}
+
+// MasterMod scales master brightness by 1 - Amount*(1 - source).
+type MasterMod struct {
+	Source string  `json:"source"` // "" = off, else one of ModSources
+	Amount float64 `json:"amount"` // 0..1
+}
+
+// ModSources are the signals modulators can follow. The first five come
+// from audio analysis; "pulse" (1 on each beat, decaying) and "phase"
+// (0..1 ramp per beat) come from the tempo clock, so they work with tap
+// tempo alone.
+var ModSources = []string{"level", "bass", "mid", "treble", "beat", "pulse", "phase"}
+
+// Modulator drives a numeric layer parameter (or "opacity") from a source:
+// value = Min + (Max-Min) * source.
+type Modulator struct {
+	Param  string  `json:"param"`
+	Source string  `json:"source"`
+	Min    float64 `json:"min"`
+	Max    float64 `json:"max"`
 }
 
 // Controller is a network pixel driver such as an AirPixel Mini II. It
@@ -138,6 +172,8 @@ type Layer struct {
 	// TempoSync feeds the effect beats instead of seconds, so speeds and
 	// rates become "per beat" and follow tap tempo / detected BPM.
 	TempoSync bool `json:"tempoSync"`
+	// Mods are applied after keyframes, so they win.
+	Mods []Modulator `json:"mods"`
 }
 
 // BlendModes are the supported layer blend modes.

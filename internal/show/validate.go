@@ -31,6 +31,17 @@ func (s *Show) Normalize() {
 	if st.Priority <= 0 || st.Priority > 200 {
 		st.Priority = 100
 	}
+	if st.Audio.Device == "" {
+		st.Audio.Device = "default"
+	}
+	if st.Audio.Gain <= 0 {
+		st.Audio.Gain = 1
+	}
+	st.Audio.Gain = min(st.Audio.Gain, 10)
+	if !slices.Contains(ModSources, st.MasterMod.Source) {
+		st.MasterMod.Source = ""
+	}
+	st.MasterMod.Amount = clamp(st.MasterMod.Amount, 0, 1)
 	if s.Tempo.BPM <= 0 {
 		s.Tempo.BPM = 120
 	}
@@ -126,6 +137,12 @@ func (s *Show) Normalize() {
 		}
 		if l.Params == nil {
 			l.Params = map[string]any{}
+		}
+		l.Mods = nonNil(l.Mods)
+		for m := range l.Mods {
+			if !slices.Contains(ModSources, l.Mods[m].Source) {
+				l.Mods[m].Source = "level"
+			}
 		}
 		if !slices.Contains(BlendModes, l.Blend) {
 			l.Blend = "normal"

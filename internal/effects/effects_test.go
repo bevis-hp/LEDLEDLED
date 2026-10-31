@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"ledledled/internal/audio"
 	"ledledled/internal/pixel"
 )
 
@@ -56,5 +57,16 @@ func TestNoiseRange(t *testing.T) {
 	}
 	if lo < -1.5 || hi > 1.5 || hi-lo < 0.8 {
 		t.Errorf("noise range %v..%v looks wrong", lo, hi)
+	}
+}
+
+func TestVUFollowsAudioLevel(t *testing.T) {
+	d, _ := Get("vu")
+	params, _ := FillDefaults("vu", map[string]any{"colorA": "#ffffff", "colorB": "#ffffff"})
+	px := make([]pixel.Color, 11)
+	ctx := &Context{Audio: &audio.Features{Level: 0.5}, Params: NewParams(d, params)}
+	d.Render(ctx, px)
+	if px[0].R != 1 || px[4].R != 1 || px[6].R != 0 || px[10].R != 0 {
+		t.Errorf("vu at 0.5: %v", px)
 	}
 }

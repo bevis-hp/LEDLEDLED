@@ -21,6 +21,7 @@ type plan struct {
 	tracks      []trackPlan
 	controllers []ctrlPlan
 	gamma       *pixel.Gamma
+	masterK     float32 // this frame's master modulation factor
 }
 
 type stripPlan struct {
@@ -61,6 +62,7 @@ type layerPlan struct {
 	params    effects.Params
 	opacity   float32 // stored opacity
 	opNow     float32 // this frame's opacity (after keyframes/modulators)
+	mods      []show.Modulator
 	blend     blendFunc
 	targets   []pixelRef    // group pixels in group order
 	buf       []pixel.Color // effect output, len(targets)
@@ -95,6 +97,7 @@ func Prepare(s *show.Show) error {
 		l.Params = p
 	}
 	pruneTracks(s)
+	pruneMods(s)
 	errs = append(errs, s.Validate())
 	return errors.Join(errs...)
 }
@@ -119,6 +122,21 @@ func trackKind(l *show.Layer, param string) (timeline.Kind, bool) {
 		return timeline.Color, true
 	}
 	return 0, false
+}
+
+// pruneMods drops modulators whose parameter isn't numeric on the layer's
+// current effect (e.g. after the effect was changed).
+func pruneMods(s *show.Show) {
+	for i := range s.Layers {
+		l := &s.Layers[i]
+		kept := l.Mods[:0]
+		for _, m := range l.Mods {
+			if kind, ok := trackKind(l, m.Param); ok && kind == timeline.Number {
+				kept = append(kept, m)
+			}
+		}
+		l.Mods = kept
+	}
 }
 
 // pruneTracks drops timeline tracks and keys that no longer make sense,
@@ -155,7 +173,7 @@ func pruneTracks(s *show.Show) {
 
 // compile builds a plan from a prepared, valid show.
 func compile(s *show.Show) (*plan, error) {
-	p := &plan{show: s, gamma: pixel.NewGamma(s.Settings.Gamma)}
+	p := &plan{show: s, gamma: pixel.NewGamma(s.Settings.Gamma), masterK: 1}
 
 	stripIdx := map[string]int{}
 	for i, st := range s.Strips {
@@ -209,6 +227,7 @@ func compile(s *show.Show) (*plan, error) {
 		p.layers = append(p.layers, layerPlan{
 			id:        l.ID,
 			tempoSync: l.TempoSync,
+			mods:      l.Mods,
 			def:       def,
 			params:    effects.NewParams(def, l.Params),
 			opacity:   float32(l.Opacity),

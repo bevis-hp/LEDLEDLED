@@ -201,3 +201,52 @@ func TestTransportLoopsAndOneShot(t *testing.T) {
 		t.Errorf("one-shot pos = %v playing=%v, want 8 stopped", p, tr.playing)
 	}
 }
+
+func TestModulatorsAndMasterMod(t *testing.T) {
+	s, rx := testShow(t)
+	s.Strips[0].ColorOrder = "RGB"
+	// Audio is off, so "level" reads 0: the mod sets opacity to Min (0.5).
+	s.Layers = []show.Layer{{ID: "L", Name: "w", Effect: "solid", Params: map[string]any{"color": "#ffffff"}, Opacity: 1,
+		Mods: []show.Modulator{
+			{Param: "opacity", Source: "level", Min: 0.5, Max: 1},
+			{Param: "bogus", Source: "level"}, // pruned
+		}}}
+	e, err := New(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(e.Show().Layers[0].Mods); n != 1 {
+		t.Errorf("mods after prune = %d, want 1", n)
+	}
+	e.frame(time.Now(), false)
+	if _, data := readUniverse(t, rx); data[0] < 126 || data[0] > 129 {
+		t.Fatalf("modulated opacity gave %v, want ~128", data[:3])
+	}
+
+	s.Settings.MasterMod = show.MasterMod{Source: "level", Amount: 1} // silent -> dark
+	if err := e.Apply(s); err != nil {
+		t.Fatal(err)
+	}
+	e.frame(time.Now(), false)
+	if _, data := readUniverse(t, rx); data[0] != 0 {
+		t.Fatalf("master mod at silence gave %v, want 0", data[:3])
+	}
+}
+
+func TestSimAudioReachesEngine(t *testing.T) {
+	s, _ := testShow(t)
+	s.Settings.Audio = show.AudioSettings{Enabled: true, Device: "sim"}
+	e, err := New(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.audio.Stop()
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if f := e.audio.Latest(); f.Level > 0 && f.BeatCount > 0 {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("no audio from sim device: %+v / %+v", e.audio.Latest(), e.audio.Status())
+}

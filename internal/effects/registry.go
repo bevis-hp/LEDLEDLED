@@ -10,6 +10,7 @@ import (
 	"slices"
 	"sort"
 
+	"ledledled/internal/audio"
 	"ledledled/internal/pixel"
 )
 
@@ -40,8 +41,19 @@ type Context struct {
 	// Time drives the animation. It is seconds, or beats when the layer
 	// is tempo-synced, so "1 cycle per second" becomes "1 cycle per beat".
 	Time   float64
-	Beat   float64 // global beat position (always beats)
+	Beat   float64         // global beat position (always beats)
+	Audio  *audio.Features // latest audio analysis; nil if audio is off
 	Params Params
+}
+
+var silence audio.Features
+
+// AudioFeatures returns the context's audio features, or silence.
+func (c *Context) AudioFeatures() *audio.Features {
+	if c.Audio == nil {
+		return &silence
+	}
+	return c.Audio
 }
 
 // RenderFunc fills px (the pixels of a layer's group, in group order).
