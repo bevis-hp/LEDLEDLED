@@ -98,6 +98,7 @@ func Prepare(s *show.Show) error {
 	}
 	pruneTracks(s)
 	pruneMods(s)
+	prunePaletteRefs(s)
 	errs = append(errs, s.Validate())
 	return errors.Join(errs...)
 }
@@ -122,6 +123,45 @@ func trackKind(l *show.Layer, param string) (timeline.Kind, bool) {
 		return timeline.Color, true
 	}
 	return 0, false
+}
+
+// prunePaletteRefs clears palette parameters that point at palettes which
+// no longer exist (e.g. a deleted user palette), so effects fall back to
+// their own colours.
+func prunePaletteRefs(s *show.Show) {
+	known := map[string]bool{}
+	for _, pl := range s.AllPalettes() {
+		known[pl.ID] = true
+	}
+	for i := range s.Layers {
+		l := &s.Layers[i]
+		def, ok := effects.Get(l.Effect)
+		if !ok {
+			continue
+		}
+		for _, pd := range def.Params {
+			if id, _ := l.Params[pd.Name].(string); pd.Type == effects.Palette && id != "" && !known[id] {
+				l.Params[pd.Name] = ""
+			}
+		}
+	}
+}
+
+// compilePalettes builds lookup tables for built-in and show palettes.
+func compilePalettes(s *show.Show) map[string]*pixel.Palette {
+	out := map[string]*pixel.Palette{}
+	for _, pl := range s.AllPalettes() {
+		stops := make([]pixel.Stop, 0, len(pl.Stops))
+		for _, st := range pl.Stops {
+			c, err := pixel.ParseHex(st.Color)
+			if err != nil {
+				continue // Validate reports bad colours
+			}
+			stops = append(stops, pixel.Stop{Pos: st.Pos, Color: c})
+		}
+		out[pl.ID] = pixel.NewPalette(stops)
+	}
+	return out
 }
 
 // pruneMods drops modulators whose parameter isn't numeric on the layer's
@@ -174,6 +214,7 @@ func pruneTracks(s *show.Show) {
 // compile builds a plan from a prepared, valid show.
 func compile(s *show.Show) (*plan, error) {
 	p := &plan{show: s, gamma: pixel.NewGamma(s.Settings.Gamma), masterK: 1}
+	pals := compilePalettes(s)
 
 	stripIdx := map[string]int{}
 	for i, st := range s.Strips {
@@ -229,7 +270,7 @@ func compile(s *show.Show) (*plan, error) {
 			tempoSync: l.TempoSync,
 			mods:      l.Mods,
 			def:       def,
-			params:    effects.NewParams(def, l.Params),
+			params:    effects.NewParams(def, l.Params).WithPalettes(pals),
 			opacity:   float32(l.Opacity),
 			blend:     blendFuncs[l.Blend],
 			targets:   targets,

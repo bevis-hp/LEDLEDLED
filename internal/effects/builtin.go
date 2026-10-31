@@ -38,10 +38,12 @@ func init() {
 		Params: []ParamDef{
 			{Name: "colorA", Label: "Colour A", Type: Color, Default: "#ff0040"},
 			{Name: "colorB", Label: "Colour B", Type: Color, Default: "#0040ff"},
+			{Name: "palette", Label: "Palette (replaces colours)", Type: Palette, Default: ""},
 			{Name: "speed", Label: "Scroll speed", Type: Number, Default: 0.0, Min: -2, Max: 2, Step: 0.01},
 		},
 		Render: func(ctx *Context, px []pixel.Color) {
 			a, b := ctx.Params.Color("colorA"), ctx.Params.Color("colorB")
+			pal := ctx.Params.Palette("palette")
 			speed := ctx.Params.Num("speed")
 			for i := range px {
 				t := pos(i, len(px))
@@ -49,7 +51,11 @@ func init() {
 					// Triangle wave so the loop has no hard seam.
 					t = 1 - math.Abs(2*frac(t-ctx.Time*speed)-1)
 				}
-				px[i] = a.Lerp(b, float32(t))
+				if pal != nil {
+					px[i] = pal.At(t)
+				} else {
+					px[i] = a.Lerp(b, float32(t))
+				}
 			}
 		},
 	})
@@ -78,6 +84,7 @@ func init() {
 		Params: []ParamDef{
 			{Name: "colorA", Label: "Colour A", Type: Color, Default: "#000000"},
 			{Name: "colorB", Label: "Colour B", Type: Color, Default: "#ff6a00"},
+			{Name: "palette", Label: "Palette (replaces colours)", Type: Palette, Default: ""},
 			{Name: "scale", Label: "Scale (blobs across group)", Type: Number, Default: 4.0, Min: 0.1, Max: 40, Step: 0.1},
 			{Name: "speed", Label: "Speed", Type: Number, Default: 0.5, Min: 0, Max: 5, Step: 0.01},
 			{Name: "detail", Label: "Detail (octaves)", Type: Number, Default: 2.0, Min: 1, Max: 5, Step: 1},
@@ -88,10 +95,15 @@ func init() {
 			scale, speed := ctx.Params.Num("scale"), ctx.Params.Num("speed")
 			oct := int(ctx.Params.Num("detail"))
 			contrast := ctx.Params.Num("contrast")
+			pal := ctx.Params.Palette("palette")
 			for i := range px {
 				n := fbm(pos(i, len(px))*scale, ctx.Time*speed, max(oct, 1))
 				t := math.Max(0, math.Min(1, 0.5+0.5*n*contrast))
-				px[i] = a.Lerp(b, float32(t))
+				if pal != nil {
+					px[i] = pal.At(t)
+				} else {
+					px[i] = a.Lerp(b, float32(t))
+				}
 			}
 		},
 	})
@@ -157,6 +169,7 @@ func init() {
 		Description: "Random pixels flash and fade out.",
 		Params: []ParamDef{
 			{Name: "color", Label: "Colour", Type: Color, Default: "#ffffff"},
+			{Name: "palette", Label: "Palette (random colour per flash)", Type: Palette, Default: ""},
 			{Name: "background", Label: "Background", Type: Color, Default: "#000000"},
 			{Name: "density", Label: "Density", Type: Number, Default: 0.1, Min: 0, Max: 1, Step: 0.01},
 			{Name: "speed", Label: "Flashes/s per pixel", Type: Number, Default: 2.0, Min: 0.1, Max: 20, Step: 0.1},
@@ -164,15 +177,48 @@ func init() {
 		Render: func(ctx *Context, px []pixel.Color) {
 			c, bg := ctx.Params.Color("color"), ctx.Params.Color("background")
 			density, speed := ctx.Params.Num("density"), ctx.Params.Num("speed")
+			pal := ctx.Params.Palette("palette")
 			for i := range px {
 				// Each pixel has its own phase so flashes don't sync up.
 				t := ctx.Time*speed + hash01(i, 7919)
 				slot := int(math.Floor(t))
 				var v float64
+				fc := c
 				if hash01(i, slot) < density {
 					v = math.Pow(1-frac(t), 3) // quick flash, exponential-ish fade
+					if pal != nil {
+						fc = pal.At(hash01(slot, i+101))
+					}
 				}
-				px[i] = bg.Lerp(c, float32(v))
+				px[i] = bg.Lerp(fc, float32(v))
+			}
+		},
+	})
+
+	register(&Def{
+		Name: "palette", Label: "Palette scroll",
+		Description: "Spreads a palette along the group and scrolls it. Wraps seamlessly; mirror plays it there-and-back.",
+		Params: []ParamDef{
+			{Name: "palette", Label: "Palette", Type: Palette, Default: "rainbow"},
+			{Name: "speed", Label: "Speed (cycles/s)", Type: Number, Default: 0.1, Min: -3, Max: 3, Step: 0.01},
+			{Name: "repeats", Label: "Repeats across group", Type: Number, Default: 1.0, Min: 0.05, Max: 10, Step: 0.05},
+			{Name: "mirror", Label: "Mirror", Type: Bool, Default: false},
+		},
+		Render: func(ctx *Context, px []pixel.Color) {
+			pal := ctx.Params.Palette("palette")
+			if pal == nil {
+				clear(px)
+				return
+			}
+			speed, reps := ctx.Params.Num("speed"), ctx.Params.Num("repeats")
+			mirror := ctx.Params.Bool("mirror")
+			n := len(px)
+			for i := range px {
+				u := frac(float64(i)/float64(max(n, 1))*reps - ctx.Time*speed)
+				if mirror {
+					u = 1 - math.Abs(2*u-1)
+				}
+				px[i] = pal.At(u)
 			}
 		},
 	})

@@ -250,3 +250,38 @@ func TestSimAudioReachesEngine(t *testing.T) {
 	}
 	t.Fatalf("no audio from sim device: %+v / %+v", e.audio.Latest(), e.audio.Status())
 }
+
+func TestPaletteEffectsAndDeletedPaletteFallback(t *testing.T) {
+	s, rx := testShow(t)
+	s.Strips[0].ColorOrder = "RGB"
+	s.Palettes = []show.Palette{{ID: "mine", Name: "Mine", Stops: []show.PaletteStop{{Pos: 0, Color: "#00ff00"}, {Pos: 1, Color: "#00ff00"}}}}
+	s.Layers = []show.Layer{{ID: "L", Name: "g", Effect: "gradient", Opacity: 1,
+		Params: map[string]any{"colorA": "#ff0000", "colorB": "#ff0000", "palette": "mine", "speed": 0.0}}}
+	e, err := New(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.frame(time.Now(), false)
+	if _, data := readUniverse(t, rx); data[0] != 0 || data[1] != 255 {
+		t.Fatalf("palette not used: %v", data[:3])
+	}
+
+	// Deleting the palette falls back to the layer's own colours.
+	s.Palettes = nil
+	if err := e.Apply(s); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.Show().Layers[0].Params["palette"]; got != "" {
+		t.Errorf("stale palette ref = %v, want cleared", got)
+	}
+	e.frame(time.Now(), false)
+	if _, data := readUniverse(t, rx); data[0] != 255 || data[1] != 0 {
+		t.Fatalf("fallback colours not used: %v", data[:3])
+	}
+
+	// Built-in IDs are reserved.
+	s.Palettes = []show.Palette{{ID: "fire", Name: "x", Stops: []show.PaletteStop{{Pos: 0, Color: "#000000"}}}}
+	if err := e.Apply(s); err == nil {
+		t.Error("expected error for reserved palette id")
+	}
+}

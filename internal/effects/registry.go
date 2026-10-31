@@ -18,10 +18,11 @@ import (
 type ParamType string
 
 const (
-	Number ParamType = "number"
-	Color  ParamType = "color"
-	Bool   ParamType = "bool"
-	Select ParamType = "select" // one of Options
+	Number  ParamType = "number"
+	Color   ParamType = "color"
+	Bool    ParamType = "bool"
+	Select  ParamType = "select"  // one of Options
+	Palette ParamType = "palette" // palette ID, "" = use the effect's own colours
 )
 
 // ParamDef describes one effect parameter.
@@ -140,6 +141,9 @@ func TypeMatches(p ParamDef, v any) bool {
 	case Select:
 		s, ok := v.(string)
 		return ok && slices.Contains(p.Options, s)
+	case Palette:
+		_, ok := v.(string)
+		return ok
 	}
 	return false
 }

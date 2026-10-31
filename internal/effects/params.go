@@ -9,15 +9,33 @@ import "ledledled/internal/pixel"
 // Overrides live in maps that are cleared and refilled every frame, so
 // animating a parameter never allocates.
 type Params struct {
-	def    *Def
-	values map[string]any
-	nums   map[string]float64
-	colors map[string]pixel.Color
+	def      *Def
+	values   map[string]any
+	nums     map[string]float64
+	colors   map[string]pixel.Color
+	palettes map[string]*pixel.Palette // by ID, shared by all layers
 }
 
 // NewParams binds a parameter map to an effect definition.
 func NewParams(d *Def, values map[string]any) Params {
 	return Params{def: d, values: values, nums: map[string]float64{}, colors: map[string]pixel.Color{}}
+}
+
+// WithPalettes returns params that resolve palette IDs through pals.
+func (p Params) WithPalettes(pals map[string]*pixel.Palette) Params {
+	p.palettes = pals
+	return p
+}
+
+// Palette returns the palette chosen for a palette parameter, or nil when
+// none is selected (or it no longer exists): effects then fall back to
+// their own colour parameters.
+func (p Params) Palette(name string) *pixel.Palette {
+	id, _ := p.lookup(name).(string)
+	if id == "" {
+		return nil
+	}
+	return p.palettes[id]
 }
 
 // Def returns the effect definition the params belong to.

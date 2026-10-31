@@ -21,6 +21,7 @@ type Show struct {
 	Groups      []Group      `json:"groups"`
 	Layers      []Layer      `json:"layers"`
 	Timeline    Timeline     `json:"timeline"`
+	Palettes    []Palette    `json:"palettes"` // user palettes (built-ins are implicit)
 }
 
 // Timeline is a single looping keyframe timeline measured in beats, so it

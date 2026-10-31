@@ -56,3 +56,20 @@ func TestEncodeBrightnessAndGamma(t *testing.T) {
 		t.Errorf("gamma 2 @ 0.5 = %d, want 64", dst[0])
 	}
 }
+
+func TestPaletteInterpolatesAndClamps(t *testing.T) {
+	p := NewPalette([]Stop{{Pos: 1, Color: Color{B: 1}}, {Pos: 0, Color: Color{R: 1}}})
+	if c := p.At(0); c.R != 1 || c.B != 0 {
+		t.Errorf("At(0) = %+v", c)
+	}
+	if c := p.At(0.5); c.R < 0.49 || c.R > 0.51 || c.B < 0.49 || c.B > 0.51 {
+		t.Errorf("At(0.5) = %+v", c)
+	}
+	if c := p.At(7); c.B != 1 {
+		t.Errorf("At(7) not clamped: %+v", c)
+	}
+	held := NewPalette([]Stop{{Pos: 0.5, Color: Color{G: 1}}})
+	if c := held.At(0); c.G != 1 {
+		t.Errorf("single stop not held: %+v", c)
+	}
+}

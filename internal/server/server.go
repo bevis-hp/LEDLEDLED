@@ -112,6 +112,7 @@ type meta struct {
 	Protocols   []output.Protocol `json:"protocols"`
 	Eases       []string          `json:"eases"`
 	ModSources  []string          `json:"modSources"`
+	Palettes    []show.Palette    `json:"builtinPalettes"`
 }
 
 func (s *Server) getMeta(w http.ResponseWriter, r *http.Request) {
@@ -122,6 +123,7 @@ func (s *Server) getMeta(w http.ResponseWriter, r *http.Request) {
 		Protocols:   []output.Protocol{output.SACN, output.ArtNet},
 		Eases:       timeline.Eases,
 		ModSources:  show.ModSources,
+		Palettes:    show.BuiltinPalettes,
 	})
 }
 

@@ -57,6 +57,19 @@ func (s *Show) Normalize() {
 	s.Groups = nonNil(s.Groups)
 	s.Layers = nonNil(s.Layers)
 
+	s.Palettes = nonNil(s.Palettes)
+	for i := range s.Palettes {
+		pl := &s.Palettes[i]
+		if pl.ID == "" {
+			pl.ID = NewID()
+		}
+		pl.Stops = nonNil(pl.Stops)
+		for k := range pl.Stops {
+			pl.Stops[k].Pos = clamp(pl.Stops[k].Pos, 0, 1)
+		}
+		slices.SortStableFunc(pl.Stops, func(a, b PaletteStop) int { return cmp.Compare(a.Pos, b.Pos) })
+	}
+
 	tl := &s.Timeline
 	if tl.LengthBeats <= 0 {
 		tl.LengthBeats = 16
@@ -203,6 +216,22 @@ func (s *Show) Validate() error {
 			if sec.Start < 0 || sec.End < sec.Start || sec.End >= st.Pixels {
 				add("group %q section %d: range %d-%d outside strip %q (0-%d)",
 					g.Name, i+1, sec.Start, sec.End, st.Name, st.Pixels-1)
+			}
+		}
+	}
+
+	pals := map[string]bool{}
+	for _, pl := range s.Palettes {
+		if pals[pl.ID] || IsBuiltinPalette(pl.ID) {
+			add("palette %q: duplicate or reserved id %q", pl.Name, pl.ID)
+		}
+		pals[pl.ID] = true
+		if len(pl.Stops) == 0 {
+			add("palette %q: needs at least one colour stop", pl.Name)
+		}
+		for _, st := range pl.Stops {
+			if _, err := pixel.ParseHex(st.Color); err != nil {
+				add("palette %q: %v", pl.Name, err)
 			}
 		}
 	}
