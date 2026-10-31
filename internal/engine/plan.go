@@ -9,6 +9,7 @@ import (
 	"ledledled/internal/output"
 	"ledledled/internal/pixel"
 	"ledledled/internal/show"
+	"ledledled/internal/timeline"
 )
 
 // plan is a show compiled into flat, allocation-free per-frame structures.
@@ -17,6 +18,7 @@ type plan struct {
 	show        *show.Show
 	strips      []stripPlan
 	layers      []layerPlan
+	tracks      []trackPlan
 	controllers []ctrlPlan
 	gamma       *pixel.Gamma
 }
@@ -41,6 +43,14 @@ type stripPlan struct {
 	limited           bool
 }
 
+// trackPlan is a compiled timeline track bound to a layer in plan.layers.
+type trackPlan struct {
+	layer   int
+	param   string
+	opacity bool // animates the layer's opacity rather than an effect param
+	track   timeline.Track
+}
+
 // pixelRef addresses one pixel of one strip.
 type pixelRef struct{ strip, idx int32 }
 
@@ -49,7 +59,8 @@ type layerPlan struct {
 	tempoSync bool
 	def       *effects.Def
 	params    effects.Params
-	opacity   float32
+	opacity   float32 // stored opacity
+	opNow     float32 // this frame's opacity (after keyframes/modulators)
 	blend     blendFunc
 	targets   []pixelRef    // group pixels in group order
 	buf       []pixel.Color // effect output, len(targets)
@@ -83,8 +94,63 @@ func Prepare(s *show.Show) error {
 		}
 		l.Params = p
 	}
+	pruneTracks(s)
 	errs = append(errs, s.Validate())
 	return errors.Join(errs...)
+}
+
+// trackKind reports what a track on (layer, param) animates, or false if
+// the parameter can't be animated (unknown, bool or select).
+func trackKind(l *show.Layer, param string) (timeline.Kind, bool) {
+	if param == "opacity" {
+		return timeline.Number, true
+	}
+	def, ok := effects.Get(l.Effect)
+	if !ok {
+		return 0, false
+	}
+	pd, ok := def.Param(param)
+	switch {
+	case !ok:
+		return 0, false
+	case pd.Type == effects.Number:
+		return timeline.Number, true
+	case pd.Type == effects.Color:
+		return timeline.Color, true
+	}
+	return 0, false
+}
+
+// pruneTracks drops timeline tracks and keys that no longer make sense,
+// e.g. after a layer was deleted or its effect changed. Stale tracks are
+// expected during normal editing, so this is silent rather than an error.
+func pruneTracks(s *show.Show) {
+	layers := map[string]*show.Layer{}
+	for i := range s.Layers {
+		layers[s.Layers[i].ID] = &s.Layers[i]
+	}
+	kept := s.Timeline.Tracks[:0]
+	seen := map[[2]string]bool{}
+	for _, tr := range s.Timeline.Tracks {
+		l, ok := layers[tr.LayerID]
+		if !ok || seen[[2]string{tr.LayerID, tr.Param}] {
+			continue
+		}
+		kind, ok := trackKind(l, tr.Param)
+		if !ok {
+			continue
+		}
+		keys := tr.Keys[:0]
+		for _, k := range tr.Keys {
+			if _, err := timeline.Compile(kind, []timeline.RawKey{{Value: k.Value}}); err == nil {
+				keys = append(keys, k)
+			}
+		}
+		tr.Keys = keys
+		seen[[2]string{tr.LayerID, tr.Param}] = true
+		kept = append(kept, tr)
+	}
+	s.Timeline.Tracks = kept
 }
 
 // compile builds a plan from a prepared, valid show.
@@ -150,6 +216,33 @@ func compile(s *show.Show) (*plan, error) {
 			targets:   targets,
 			buf:       make([]pixel.Color, len(targets)),
 		})
+	}
+
+	layerIdx := map[string]int{}
+	for i, lp := range p.layers {
+		layerIdx[lp.id] = i
+	}
+	for i := range s.Layers {
+		l := &s.Layers[i]
+		li, ok := layerIdx[l.ID]
+		if !ok {
+			continue // muted
+		}
+		for _, tr := range s.Timeline.Tracks {
+			if tr.LayerID != l.ID || len(tr.Keys) == 0 {
+				continue
+			}
+			kind, _ := trackKind(l, tr.Param)
+			raw := make([]timeline.RawKey, len(tr.Keys))
+			for k, key := range tr.Keys {
+				raw[k] = timeline.RawKey{Beat: key.Beat, Value: key.Value, Ease: key.Ease}
+			}
+			ct, err := timeline.Compile(kind, raw)
+			if err != nil {
+				return nil, fmt.Errorf("track %s/%s: %w", l.Name, tr.Param, err)
+			}
+			p.tracks = append(p.tracks, trackPlan{layer: li, param: tr.Param, opacity: tr.Param == "opacity", track: ct})
+		}
 	}
 
 	for ci, cp := range s.Patch() {

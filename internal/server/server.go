@@ -63,6 +63,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/identify", s.postIdentify)
 	mux.HandleFunc("POST /api/tempo/tap", s.postTap)
 	mux.HandleFunc("POST /api/tempo", s.postTempo)
+	mux.HandleFunc("POST /api/transport", s.postTransport)
 	mux.HandleFunc("GET /ws", s.ws)
 	mux.Handle("/", s.static())
 	return logRequests(mux)
@@ -160,6 +161,22 @@ func (s *Server) postTempo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.eng.Status())
 }
 
+func (s *Server) postTransport(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Action string  `json:"action"` // play, pause, stop, seek
+		Beat   float64 `json:"beat"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.eng.Transport(body.Action, body.Beat); err != nil {
+		httpError(w, http.StatusBadRequest, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ws streams binary preview frames and JSON show updates to the browser.
 // Status is pushed once a second so the UI can show fps/send errors.
 func (s *Server) ws(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +214,11 @@ func (s *Server) ws(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case f := <-frames:
-			err = write(websocket.MessageBinary, f)
+			typ := websocket.MessageBinary
+			if f.Text {
+				typ = websocket.MessageText
+			}
+			err = write(typ, f.Data)
 		case msg := <-c.text:
 			err = write(websocket.MessageText, msg)
 		case <-statusTick.C:

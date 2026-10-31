@@ -109,7 +109,7 @@ func TestPreviewFrameFormat(t *testing.T) {
 	ch, cancel := e.Subscribe()
 	defer cancel()
 	e.frame(time.Now(), true)
-	f := <-ch
+	f := (<-ch).Data
 	if f[0] != 1 || f[1] != 1 || f[3] != 4 || len(f) != 3+2+12 || f[5] != 255 {
 		t.Fatalf("preview frame = %v", f)
 	}
@@ -160,5 +160,44 @@ func TestPowerLimitScalesWireData(t *testing.T) {
 	st := e.Status().Strips[0]
 	if !st.Limited || st.Amps > 0.12 || st.RequestedAmps < 0.239 || st.Watts > 0.6 {
 		t.Errorf("status = %+v", st)
+	}
+}
+
+func TestTimelineKeyframesDriveParams(t *testing.T) {
+	s, rx := testShow(t)
+	s.Strips[0].ColorOrder = "RGB"
+	s.Layers = []show.Layer{{ID: "L", Name: "c", Effect: "solid", Params: map[string]any{"color": "#00ff00"}, Opacity: 1}}
+	s.Timeline = show.Timeline{LengthBeats: 8, Tracks: []show.Track{
+		{LayerID: "L", Param: "color", Keys: []show.Keyframe{{Beat: 0, Value: "#000000"}, {Beat: 4, Value: "#ff0000"}}},
+		{LayerID: "L", Param: "opacity", Keys: []show.Keyframe{{Beat: 0, Value: 1.0}}},
+		{LayerID: "L", Param: "nonsense", Keys: []show.Keyframe{{Beat: 0, Value: 1.0}}}, // pruned
+	}}
+	e, err := New(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(e.Show().Timeline.Tracks); n != 2 {
+		t.Errorf("tracks after prune = %d, want 2", n)
+	}
+	if err := e.Transport("seek", 2); err != nil {
+		t.Fatal(err)
+	}
+	e.frame(time.Now(), false)
+	_, data := readUniverse(t, rx)
+	if data[0] < 126 || data[0] > 129 || data[1] != 0 {
+		t.Fatalf("pixel at beat 2 = %v, want ~half red", data[:3])
+	}
+	if err := e.Transport("bogus", 0); err == nil {
+		t.Error("expected error for unknown action")
+	}
+}
+
+func TestTransportLoopsAndOneShot(t *testing.T) {
+	tr := transport{playing: true, startBeat: 10}
+	if p := tr.position(19, 8, false); p != 1 {
+		t.Errorf("loop pos = %v, want 1", p)
+	}
+	if p := tr.position(19, 8, true); p != 8 || tr.playing {
+		t.Errorf("one-shot pos = %v playing=%v, want 8 stopped", p, tr.playing)
 	}
 }

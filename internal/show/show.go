@@ -20,6 +20,30 @@ type Show struct {
 	Strips      []Strip      `json:"strips"`
 	Groups      []Group      `json:"groups"`
 	Layers      []Layer      `json:"layers"`
+	Timeline    Timeline     `json:"timeline"`
+}
+
+// Timeline is a single looping keyframe timeline measured in beats, so it
+// follows tap tempo / detected BPM. Tracks override layer parameters.
+type Timeline struct {
+	LengthBeats float64 `json:"lengthBeats"` // loop length, default 16 (4 bars of 4/4)
+	OneShot     bool    `json:"oneShot"`     // stop at the end instead of looping
+	Tracks      []Track `json:"tracks"`
+}
+
+// Track animates one parameter of one layer.
+type Track struct {
+	LayerID string     `json:"layerId"`
+	Param   string     `json:"param"` // effect param name, or "opacity"
+	Keys    []Keyframe `json:"keys"`
+}
+
+// Keyframe is a value at a beat. Ease controls the interpolation from this
+// key to the next: linear, smooth, in, out or step.
+type Keyframe struct {
+	Beat  float64 `json:"beat"`
+	Value any     `json:"value"` // number, or "#rrggbb" for colours
+	Ease  string  `json:"ease"`
 }
 
 // Tempo is the beat clock's saved state. The live BPM (tap tempo, audio

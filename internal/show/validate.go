@@ -1,6 +1,7 @@
 package show
 
 import (
+	"cmp"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 
 	"ledledled/internal/output"
 	"ledledled/internal/pixel"
+	"ledledled/internal/timeline"
 )
 
 // Normalize fills in missing IDs and defaults and clamps out-of-range
@@ -43,6 +45,24 @@ func (s *Show) Normalize() {
 	s.Strips = nonNil(s.Strips)
 	s.Groups = nonNil(s.Groups)
 	s.Layers = nonNil(s.Layers)
+
+	tl := &s.Timeline
+	if tl.LengthBeats <= 0 {
+		tl.LengthBeats = 16
+	}
+	tl.LengthBeats = clamp(tl.LengthBeats, 0.25, 4096)
+	tl.Tracks = nonNil(tl.Tracks)
+	for i := range tl.Tracks {
+		tr := &tl.Tracks[i]
+		tr.Keys = nonNil(tr.Keys)
+		for k := range tr.Keys {
+			tr.Keys[k].Beat = clamp(tr.Keys[k].Beat, 0, tl.LengthBeats)
+			if !slices.Contains(timeline.Eases, tr.Keys[k].Ease) {
+				tr.Keys[k].Ease = "linear"
+			}
+		}
+		slices.SortStableFunc(tr.Keys, func(a, b Keyframe) int { return cmp.Compare(a.Beat, b.Beat) })
+	}
 
 	for i := range s.Controllers {
 		c := &s.Controllers[i]

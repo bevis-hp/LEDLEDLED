@@ -7,6 +7,7 @@ package engine
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"log/slog"
 	"math"
 	"sync"
@@ -17,6 +18,7 @@ import (
 	"ledledled/internal/pixel"
 	"ledledled/internal/show"
 	"ledledled/internal/tempo"
+	"ledledled/internal/timeline"
 )
 
 // previewHz is the target rate of preview frames sent to the UI.
@@ -31,6 +33,8 @@ type Engine struct {
 	start   time.Time
 	version uint64
 	clock   *tempo.Clock
+	tr      transport
+	tlPos   float64 // timeline playhead at the last frame
 
 	outputOn bool
 	blackout bool
@@ -42,7 +46,7 @@ type Engine struct {
 	fpsAt  time.Time
 
 	subMu sync.Mutex
-	subs  map[chan []byte]struct{}
+	subs  map[chan Message]struct{}
 
 	reset chan struct{} // nudges Run to pick up a new FPS
 }
@@ -61,7 +65,7 @@ func New(s *show.Show) (*Engine, error) {
 		outputOn: true,
 		identify: map[string]time.Time{},
 		stats:    map[string]*ctrlStats{},
-		subs:     map[chan []byte]struct{}{},
+		subs:     map[chan Message]struct{}{},
 		reset:    make(chan struct{}, 1),
 		clock:    tempo.New(120),
 	}
@@ -222,14 +226,17 @@ func (e *Engine) frame(now time.Time, preview bool) {
 	p := e.plan
 	t := now.Sub(e.start).Seconds()
 
-	e.render(p, t, e.clock.Beat(t), now)
+	beat := e.clock.Beat(t)
+	e.resolveParams(p, beat)
+	e.render(p, t, beat, now)
 
 	e.encode(p)
 	if e.outputOn {
 		e.send(p)
 	}
 	if preview {
-		e.publish(e.encodePreview(p))
+		e.publish(Message{Data: e.encodePreview(p)})
+		e.publish(Message{Text: true, Data: e.encodeLive(p, beat)})
 	}
 
 	e.frames++
@@ -237,6 +244,33 @@ func (e *Engine) frame(now time.Time, preview bool) {
 		e.fps = float64(e.frames) / el.Seconds()
 		e.frames, e.fpsAt = 0, now
 		rollPowerWindow(p)
+	}
+}
+
+// resolveParams sets this frame's parameter overrides: timeline keyframes
+// at the current playhead.
+func (e *Engine) resolveParams(p *plan, beat float64) {
+	for i := range p.layers {
+		p.layers[i].params.ClearOverrides()
+		p.layers[i].opNow = p.layers[i].opacity
+	}
+	tl := &p.show.Timeline
+	e.tlPos = e.tr.position(beat, tl.LengthBeats, tl.OneShot)
+	for i := range p.tracks {
+		tp := &p.tracks[i]
+		num, col, ok := tp.track.At(e.tlPos)
+		if !ok {
+			continue
+		}
+		l := &p.layers[tp.layer]
+		switch {
+		case tp.opacity:
+			l.opNow = float32(math.Max(0, math.Min(1, num)))
+		case tp.track.Kind == timeline.Color:
+			l.params.OverrideColor(tp.param, col)
+		default:
+			l.params.OverrideNum(tp.param, num)
+		}
 	}
 }
 
@@ -255,7 +289,7 @@ func (e *Engine) render(p *plan, t, beat float64, now time.Time) {
 			l.def.Render(&ctx, l.buf)
 			for j, ref := range l.targets {
 				dst := &p.strips[ref.strip].px[ref.idx]
-				*dst = l.blend(*dst, l.buf[j], l.opacity)
+				*dst = l.blend(*dst, l.buf[j], l.opNow)
 			}
 		}
 	}
@@ -411,10 +445,17 @@ func (e *Engine) encodePreview(p *plan) []byte {
 	return buf
 }
 
-// Subscribe returns a channel of preview frames. Slow consumers drop frames
-// rather than stalling the render loop. Call cancel when done.
-func (e *Engine) Subscribe() (<-chan []byte, func()) {
-	ch := make(chan []byte, 2)
+// Message is a frame for UI subscribers: binary preview pixels, or a JSON
+// "live" text message (beat, playhead, audio levels).
+type Message struct {
+	Text bool
+	Data []byte
+}
+
+// Subscribe returns a channel of preview messages. Slow consumers drop
+// messages rather than stalling the render loop. Call cancel when done.
+func (e *Engine) Subscribe() (<-chan Message, func()) {
+	ch := make(chan Message, 8)
 	e.subMu.Lock()
 	e.subs[ch] = struct{}{}
 	e.subMu.Unlock()
@@ -425,7 +466,7 @@ func (e *Engine) Subscribe() (<-chan []byte, func()) {
 	}
 }
 
-func (e *Engine) publish(frame []byte) {
+func (e *Engine) publish(frame Message) {
 	e.subMu.Lock()
 	defer e.subMu.Unlock()
 	for ch := range e.subs {
@@ -434,6 +475,28 @@ func (e *Engine) publish(frame []byte) {
 		default:
 		}
 	}
+}
+
+// liveMsg is the ~20 Hz JSON update for animated UI elements.
+type liveMsg struct {
+	Type     string     `json:"type"`
+	BPM      float64    `json:"bpm"`
+	Beat     float64    `json:"beat"`
+	Timeline liveTLInfo `json:"timeline"`
+}
+
+type liveTLInfo struct {
+	Playing bool    `json:"playing"`
+	Pos     float64 `json:"pos"`
+	Length  float64 `json:"length"`
+}
+
+func (e *Engine) encodeLive(p *plan, beat float64) []byte {
+	b, _ := json.Marshal(liveMsg{
+		Type: "live", BPM: e.clock.BPM(), Beat: beat,
+		Timeline: liveTLInfo{Playing: e.tr.playing, Pos: e.tlPos, Length: p.show.Timeline.LengthBeats},
+	})
+	return b
 }
 
 // Status is a snapshot of runtime state for the UI.
