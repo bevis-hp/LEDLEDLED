@@ -8,8 +8,11 @@ everything from a browser.
 
 - Single static Go binary with the web UI embedded. No runtime dependencies.
 - Map any number of controllers and strips, mixing RGB and RGBW (GRB, GRBW, ...).
-- **Groups**: drag across strips to pick pixel ranges. A group can span
-  several strips and effects treat it as one continuous line.
+- **Groups**: drag across strips to pick pixel ranges, zooming in for
+  pixel-exact picks on a phone. A group can span several strips, and effects
+  treat it as one continuous line.
+- **Palettes**: built-in and custom multi-stop gradients that effects can
+  use instead of fixed colours.
 - **Layers**: stack effects (solid, gradient, rainbow, noise, pulse, chase,
   sparkle, VU meter, spectrum) on groups with opacity and blend modes.
 - **Tempo**: tap tempo, or lock to beats detected in the audio. Any layer
@@ -22,6 +25,8 @@ everything from a browser.
 - **Power estimation and limiting** per strip for 5 V and 12 V strips.
 - **Library**: save and load named shows and reusable layer presets as JSON
   files on the Pi, and download or upload them.
+- **Captive portal**: phones pop up the controller as soon as they join the
+  Wi-Fi.
 - Live preview in the browser, multi-device sync, master dimmer, blackout,
   per-strip identify pattern.
 
@@ -35,15 +40,16 @@ everything from a browser.
 4. [Setting up the Raspberry Pi](#setting-up-the-raspberry-pi)
 5. [Setting up the AirPixels](#setting-up-the-airpixels)
 6. [First hardware test checklist](#first-hardware-test-checklist)
-7. [Tempo and the timeline](#tempo-and-the-timeline)
-8. [Audio reactivity](#audio-reactivity)
-9. [Power estimation and limiting](#power-estimation-and-limiting)
-10. [Saving shows and presets](#saving-shows-and-presets)
-11. [Troubleshooting](#troubleshooting)
-12. [Project layout](#project-layout)
-13. [HTTP API](#http-api)
-14. [A note on Wails](#a-note-on-wails)
-15. [TODO](#todo)
+7. [Groups and palettes](#groups-and-palettes)
+8. [Tempo and the timeline](#tempo-and-the-timeline)
+9. [Audio reactivity](#audio-reactivity)
+10. [Power estimation and limiting](#power-estimation-and-limiting)
+11. [Saving shows and presets](#saving-shows-and-presets)
+12. [Troubleshooting](#troubleshooting)
+13. [Project layout](#project-layout)
+14. [HTTP API](#http-api)
+15. [A note on Wails](#a-note-on-wails)
+16. [TODO](#todo)
 
 ---
 
@@ -91,6 +97,7 @@ Every frame (40 fps by default) the engine:
 | **Controller** | A network pixel driver (one AirPixel). Has an IP, a protocol (sACN or Art-Net), a **start universe** and a **universe size**. An AirPixel Mini II takes 4 consecutive universes and outputs them as one continuous pixel stream. |
 | **Strip**      | A run of pixels on a controller: pixel count, colour order (`GRB` for WS2812, `GRBW` for SK6812 RGBW, ...), brightness trim, and `reversed` if data enters at the far end. Several strips on one controller are chained in list order. |
 | **Group**      | An ordered list of **sections** (strip + pixel range `from`–`to`, optionally reversed). Effects run through the sections in order as if they were one strip. That's how you make "the left half of strip 1 plus all of strip 3" behave as a single line. |
+| **Palette**    | A multi-stop gradient. Nine built-ins (Rainbow, Fire, Lava, Ocean, Forest, Sunset, Party, Ice, Warm whites) plus your own, saved with the show. |
 | **Layer**      | An **effect** applied to a group (or to *All pixels*), with params, opacity, blend mode (`normal`, `add`, `multiply`, `screen`, `max`) and mute. Layers are listed bottom to top. |
 | **Tempo**      | The beat clock (BPM + phase), set by tap tempo, typed in, or locked to the audio. *Tempo-synced* layers receive beats instead of seconds. |
 | **Timeline**   | One looping sequence, N beats long. **Tracks** hold **keyframes** (beat, value, easing) for one layer parameter each. |
@@ -126,6 +133,7 @@ Command-line flags:
 -config show.json   path to the show file (created with defaults if missing)
 -listen :8080       HTTP listen address
 -library DIR        saved shows/presets (default: <config dir>/library)
+-portal URL         captive portal target, e.g. http://10.42.0.1/ (default $LEDLEDLED_PORTAL; empty = off)
 -debug              verbose logging
 ```
 
@@ -168,8 +176,18 @@ plus a USB Wi-Fi stick that supports **AP mode**.
    If a phone can't see the 5 GHz UI network, re-run with `UI_BAND=bg UI_CHANNEL=1`.
    `sudo ./setup-network.sh --remove` undoes it.
 
-4. **Open the UI**: join `LEDLEDLED` on your phone and browse to
-   **http://10.42.0.1** (or **http://led.lan**).
+   **Captive portal** (on by default, `CAPTIVE=0` to turn off): the networks'
+   DNS answers every name with the Pi. Phones then detect a "sign-in" network
+   and pop up the controller automatically. After a device has opened the UI,
+   its connectivity checks are answered as "online", so iOS shows **Done** and
+   Android stays connected. Tapping Done closes the pop-up; reopen the UI in
+   the browser at http://led.lan any time. The script also writes a systemd
+   drop-in (`/etc/systemd/system/ledledled.service.d/portal.conf`) that points
+   the app at the right address.
+
+4. **Open the UI**: join `LEDLEDLED` on your phone. The controller should pop
+   up by itself. If it doesn't, browse to **http://10.42.0.1** (or
+   **http://led.lan**).
 
 Updating later is just `make deploy PI_HOST=...`. Logs are available with
 `journalctl -u ledledled -f`.
@@ -217,6 +235,34 @@ Summarised from the AirPixel Mini II manual. Do this once per unit.
 3. Set the pixel count to the real strip length and confirm the last pixel is red.
 4. Live tab: try a few effects, then build a group in the Groups tab and add
    a colour layer for it.
+
+## Groups and palettes
+
+**Picking pixels.** On the Groups tab, choose or create a group, then drag
+across a strip to add that range as a section. To be exact:
+
+- **Zoom** with − / + (or *fit*), **pinch** with two fingers, or ctrl/⌘ +
+  scroll (or pinch on a trackpad). Zoom goes up to roughly 48 screen pixels
+  per LED.
+- A **pixel-number ruler** runs along the top. When zoomed, the **overview
+  bar** underneath shows where you are; drag it to pan. Two-finger drags pan
+  too, and a selection that reaches an edge scrolls along with you.
+- Fine-tune the numbers in the *Sections* list (from / to / reverse).
+
+**Palettes.** On the Palettes tab, duplicate a built-in or start a new
+palette. Tap the bar to add a colour stop (it starts with the colour already
+at that point), drag stops to move them, and tap a stop to change its colour
+or position. To use one, pick it in an effect's **Palette** setting:
+
+| Effect | With a palette |
+|---|---|
+| Palette scroll | spreads the palette along the group and scrolls it (seamless; *mirror* for there-and-back) |
+| Gradient, Noise | the palette replaces colour A → B |
+| Sparkle | each flash takes a random palette colour |
+| VU meter, Spectrum | the bar / bands take their colour from the palette |
+
+Choosing *(use colours)* goes back to the effect's own colour pickers. If you
+delete a palette, layers using it fall back to their colours.
 
 ## Tempo and the timeline
 
@@ -347,6 +393,8 @@ files in and out of the library folder directly over SSH.
 | AirPixel LED **solid blue** (connected, but not receiving matching data) | Protocol and start universe match on both sides? Output ON? Controller enabled? IP correct? |
 | AirPixel LED flashing red | Not joined to `LEDLEDLED-PIX`: check SSID/password and that the pixel AP is up (`nmcli con show --active`). |
 | Errors on a controller in Setup | Usually "network unreachable": the pixel AP is down or the IP isn't on 10.43.0.x. |
+| Controller doesn't pop up on joining | Captive portal off (`CAPTIVE=0`) or the phone cached an earlier "online" result: forget the network and rejoin, or just open http://led.lan. Some phones show it only as a "Sign in to network" notification. |
+| Phone says "No internet" / switches to mobile data | Expected: the Pi isn't an internet gateway. Keep "use this network" / turn off auto-switching for this Wi-Fi. |
 | UI says *Disconnected* | Phone left the `LEDLEDLED` network. It reconnects by itself when back. |
 | Can't open the AirPixel config page | Turn **Output OFF** first. The AirPixel blocks its page while streaming. |
 | See the packets | On the Pi: `sudo tcpdump -ni any udp port 5568` (sACN) or `6454` (Art-Net). |
@@ -360,7 +408,7 @@ files in and out of the library folder directly over SSH.
 ```
 cmd/ledledled/        main: flags, wiring, graceful shutdown
 internal/output/      sACN + Art-Net packet encoders and UDP transmitter
-internal/pixel/       colours, colour orders, RGBW white extraction, gamma, power model
+internal/pixel/       colours, colour orders, RGBW white extraction, gamma, power model, palettes
 internal/show/        show data model, validation, universe patching, persistence
 internal/effects/     effect registry, parameter schemas, built-in + audio effects, noise
 internal/engine/      render loop: params (keys + mods), composite, encode, limit, send, preview
@@ -369,7 +417,7 @@ internal/timeline/    keyframe track compilation and evaluation (easing)
 internal/audio/       arecord capture / sim source, FFT analysis, beat + BPM detection
 internal/library/     named show/preset JSON files
 internal/fsutil/      atomic file writes
-internal/server/      HTTP API, WebSocket, debounced saving, library endpoints
+internal/server/      HTTP API, WebSocket, debounced saving, library endpoints, captive portal
 internal/webui/       go:embed of the built frontend
 frontend/             Svelte 5 + Vite UI
 deploy/               systemd unit, installer, two-AP network script
@@ -386,7 +434,7 @@ schema automatically, with no frontend changes needed.
 |-----------------------|---------------|
 | `GET /api/show`       | the full show JSON |
 | `PUT /api/show`       | replace the show. Validated, applied live, saved after 2 s idle. `422` with `{"error": ...}` if invalid |
-| `GET /api/meta`       | effects with parameter schemas, colour orders, blend modes, protocols |
+| `GET /api/meta`       | effects with parameter schemas, colour orders, blend modes, protocols, easings, modulation sources, built-in palettes |
 | `GET /api/status`     | fps, output/blackout state, per-controller packets/errors/warnings |
 | `POST /api/output`    | `{"on": bool}` start/stop sending (stop = sACN stream-terminate) |
 | `POST /api/blackout`  | `{"on": bool}` |
@@ -413,36 +461,57 @@ embedded Svelte frontend. If you later want a desktop app (e.g. a laptop
 
 ## TODO
 
-Done since the first version: ~~keyframe timeline~~, ~~BPM / tap tempo~~,
-~~power limiting per strip~~, ~~audio reactivity~~, ~~show library and
-layer presets~~.
+Already done: ~~keyframe timeline~~, ~~BPM / tap tempo~~, ~~power limiting
+per strip~~, ~~audio reactivity~~, ~~show library and layer presets~~,
+~~palettes~~, ~~captive portal~~, ~~zoomable strip picker~~.
 
-Near term (after the first hardware test):
+LEDLEDLED is aimed at **installations** (unattended, running for days or
+months) rather than gigs, so the list is ordered with that in mind.
+
+After the first hardware test:
 
 - [ ] Confirm AirPixel universe-size behaviour (510 vs 512) and document the result
 - [ ] Confirm sACN vs Art-Net behaviour/latency on the AirPixels
 - [ ] Test audio capture with the actual USB sound card / HAT; tune the
       beat-detection threshold if needed
-- [ ] Optionally send only on change (with a 1 s keep-alive) to save airtime
-- [ ] Zoomable strip picker for precise selection on phones
-- [ ] Captive portal so phones open the UI automatically on joining the network
-- [ ] Simple PIN/password for the UI
+- [ ] Test the captive portal on current iOS and Android versions
 
-Features:
+Installation essentials:
 
-- [ ] Multiple timelines / cues with a cue list and crossfades
-- [ ] Keyframe copy/paste, multi-select, and "record" mode while playing
-- [ ] Bezier easing curves; per-key ease editing in the lane
-- [ ] Power limit per controller / PSU (shared across strips), not just per strip
-- [ ] Palettes (multi-stop gradients) usable by any effect
-- [ ] More effects: fire, meteor, strobe, twinkle palettes, waves, image scroll
-- [ ] Global speed / pause; bar counter and phrase-aware auto-BPM
-- [ ] Audio: modulate colours (hue shift by band), onset per band (kick/snare/hat)
-- [ ] 2D layout: give strips positions so effects can be spatial
-- [ ] Art-Net poll / discovery of controllers
-- [ ] sACN multicast option and universe synchronisation
+- [ ] **Schedules**: on/off and brightness by time of day / day of week,
+      optionally sunrise/sunset based (needs location + clock)
+- [ ] **Real-time clock**: the Pi 4 has no RTC and the network has no
+      internet for NTP. Add an RTC HAT (e.g. DS3231) or set the clock from
+      the first phone that connects
+- [ ] **Look playlist**: rotate through saved shows/presets on a timer or at
+      scheduled times, with crossfades
+- [ ] **SD card protection**: read-only root (overlayfs) with the show and
+      library on a separate writable partition, so power cuts can't corrupt
+      the system
+- [ ] **UI lock / PIN**: separate "operator" and "view only" access if
+      visitors can join the Wi-Fi
+- [ ] **Health page**: uptime, CPU temperature, per-controller packet stats
+      and last-seen, with a warning when a controller stops responding
+      (ArtPoll for Art-Net)
 - [ ] Separate "rig" (controllers/strips) from "look" so shows can be swapped
       without touching hardware settings
+- [ ] Optionally send only on change (with a 1 s keep-alive) to save airtime
+
+Creative features:
+
+- [ ] Multiple timelines / cues with crossfades
+- [ ] Keyframe copy/paste, multi-select and a "record while playing" mode
+- [ ] Bezier easing curves; per-key ease editing in the lane
+- [ ] Palette keyframing (crossfade between palettes over time)
+- [ ] More effects: fire, meteor, strobe, waves, image scroll
+- [ ] Audio: colour modulation (hue shift by band), per-band onsets (kick/snare/hat)
+- [ ] Ambient light sensor input to dim with daylight
+- [ ] 2D layout: give strips positions so effects can be spatial
+
+Platform:
+
+- [ ] Power limit per controller / PSU (shared across strips)
+- [ ] sACN multicast option and universe synchronisation
 - [ ] Undo/redo, and a patch-style API to avoid last-write-wins conflicts
 - [ ] Optional Wails desktop shell reusing the engine
 - [ ] Frontend tests and CI
