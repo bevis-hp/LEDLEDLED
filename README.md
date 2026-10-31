@@ -192,6 +192,12 @@ plus a USB Wi-Fi stick that supports **AP mode**.
 Updating later is just `make deploy PI_HOST=...`. Logs are available with
 `journalctl -u ledledled -f`.
 
+**Keeping an eye on it.** Setup → *System* shows the Pi's CPU temperature,
+power status (the firmware's under-voltage and throttling flags, now and
+since boot), uptime, load, free disk and the running version (`git
+describe`, stamped by `make`). If the Pi is under-volted or above 80 °C,
+a **⚠ Pi** badge appears in the header on every tab.
+
 ## Setting up the AirPixels
 
 Summarised from the AirPixel Mini II manual. Do this once per unit.
@@ -401,6 +407,7 @@ files in and out of the library folder directly over SSH.
 | Audio: "arecord: ... No such file or directory" / device busy | Wrong device name (check `arecord -L`), card unplugged, or another program holds it. Capture retries every 3 s. |
 | Audio meters flat | Raise capture gain in `alsamixer`, check the input is line-level and the right input is selected; try the `sim` device to rule out the software. |
 | Strip shows "limited" all the time | Max amps lower than the look needs: raise it (if your supply allows) or lower brightness. |
+| ⚠ Pi / "under-voltage" in System | The Pi's 5 V supply sags: use an official 5.1 V / 3 A supply. Don't feed the Pi from the LED supply without a proper regulator, and keep its supply away from the LED current path. "Since boot" means it happened at least once. |
 | Choppy on Wi-Fi | Lower the FPS in Setup (25–30 is plenty), move the pixel AP channel (`PIX_CHANNEL=1` or `11`), keep the USB stick away from the Pi's metal case/USB3 ports. |
 
 ## Project layout
@@ -490,9 +497,9 @@ Installation essentials:
       the system
 - [ ] **UI lock / PIN**: separate "operator" and "view only" access if
       visitors can join the Wi-Fi
-- [ ] **Health page**: uptime, CPU temperature, per-controller packet stats
-      and last-seen, with a warning when a controller stops responding
-      (ArtPoll for Art-Net)
+- [ ] **Health page**: ~~uptime, CPU temperature, under-voltage, disk~~ (System
+      card). Still to do: per-controller last-seen with a warning when a
+      controller stops responding (ArtPoll for Art-Net), and history/logging
 - [ ] Separate "rig" (controllers/strips) from "look" so shows can be swapped
       without touching hardware settings
 - [ ] Optionally send only on change (with a 1 s keep-alive) to save airtime
