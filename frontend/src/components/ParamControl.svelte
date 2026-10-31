@@ -4,6 +4,8 @@
   // `keyState` drives the keyframe button: 'none' (not animated), 'track'
   // (animated, no key at the playhead) or 'on' (key at the playhead).
   // `mod` names the modulation source driving it, if any.
+  import { allPalettes, findPalette, cssGradient } from '../lib/palettes.js';
+
   /** @type {{ def: any, value: any, onchange: (v:any)=>void, keyState?: string, onkey?: ()=>void, mod?: string|null }} */
   let { def, value, onchange, keyState = 'none', onkey, mod = null } = $props();
 
@@ -27,9 +29,18 @@
       <select {value} onchange={(e) => onchange(e.currentTarget.value)}>
         {#each def.options as o (o)}<option value={o}>{o}</option>{/each}
       </select>
+    {:else if def.type === 'palette'}
+      <select {value} onchange={(e) => onchange(e.currentTarget.value)}>
+        <option value="">(use colours)</option>
+        {#each allPalettes() as p (p.id)}<option value={p.id}>{p.name}</option>{/each}
+      </select>
     {/if}
   </span>
-  <span class="value mono">{def.type === 'number' ? fmt(value) : def.type === 'color' ? value : ''}</span>
+  {#if def.type === 'palette'}
+    <span class="swatch" style="background: {value ? cssGradient(findPalette(value)?.stops) : 'transparent'}"></span>
+  {:else}
+    <span class="value mono">{def.type === 'number' ? fmt(value) : def.type === 'color' ? value : ''}</span>
+  {/if}
   {#if animatable && onkey}
     <button
       class="key"
@@ -77,6 +88,10 @@
     text-align: right;
     color: var(--muted);
     overflow: hidden;
+  }
+  .swatch {
+    height: 1.4rem;
+    border-radius: 4px;
   }
   .key {
     min-width: 2rem;
