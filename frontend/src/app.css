@@ -1,0 +1,177 @@
+/* Global styles: dark, touch-friendly, no framework. */
+:root {
+  --bg: #111318;
+  --bg-2: #181b22;
+  --card: #1d2129;
+  --line: #2c313c;
+  --text: #e6e8ee;
+  --muted: #8a92a3;
+  --accent: #4f8cff;
+  --ok: #3ccf7a;
+  --warn: #ffb547;
+  --danger: #ff5a64;
+  color-scheme: dark;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
+  color: var(--text);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+h2 {
+  font-size: 1rem;
+  margin: 1rem 0 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+h3 {
+  font-size: 0.95rem;
+  margin: 1rem 0 0.4rem;
+}
+section {
+  margin-bottom: 1rem;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.grow {
+  flex: 1;
+  min-width: 6rem;
+}
+.spacer {
+  flex: 1;
+}
+
+.grid2,
+.grid3 {
+  display: grid;
+  gap: 0.5rem 0.75rem;
+  margin-top: 0.5rem;
+}
+.grid2 {
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+}
+.grid3 {
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+}
+.grid2 label,
+.grid3 label:not(.inline) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+label.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+}
+
+input,
+select,
+button,
+.button {
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  min-height: 2.25rem;
+}
+input[type='range'] {
+  padding: 0;
+  border: none;
+  background: transparent;
+  accent-color: var(--accent);
+  width: 100%;
+}
+input[type='checkbox'] {
+  min-height: auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent);
+}
+input[type='color'] {
+  padding: 0.1rem;
+}
+button,
+.button {
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.on {
+  background: #17402a;
+  border-color: var(--ok);
+  color: var(--ok);
+}
+button.alert {
+  background: #4a1a1e;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+button.danger {
+  color: var(--danger);
+}
+button.icon {
+  min-width: 2.25rem;
+  padding: 0.3rem;
+}
+button.small {
+  min-height: 1.8rem;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0.3rem 0;
+}
+.err {
+  color: var(--danger);
+  font-size: 0.8rem;
+}
+.warn {
+  color: var(--warn);
+  font-size: 0.8rem;
+  margin: 0.2rem 0;
+}
+.mono {
+  font-family: ui-monospace, monospace;
+}

@@ -34,6 +34,12 @@ func (s *Show) Normalize() {
 		st.CID = hex.EncodeToString(cid[:])
 	}
 
+	// Empty lists must serialise as [] rather than null for the UI.
+	s.Controllers = nonNil(s.Controllers)
+	s.Strips = nonNil(s.Strips)
+	s.Groups = nonNil(s.Groups)
+	s.Layers = nonNil(s.Layers)
+
 	for i := range s.Controllers {
 		c := &s.Controllers[i]
 		if c.ID == "" {
@@ -73,6 +79,7 @@ func (s *Show) Normalize() {
 		if s.Groups[i].ID == "" {
 			s.Groups[i].ID = NewID()
 		}
+		s.Groups[i].Sections = nonNil(s.Groups[i].Sections)
 	}
 	for i := range s.Layers {
 		l := &s.Layers[i]
@@ -173,3 +180,10 @@ func ParseCID(s string) ([16]byte, error) {
 }
 
 func clamp(v, lo, hi float64) float64 { return max(lo, min(hi, v)) }
+
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}

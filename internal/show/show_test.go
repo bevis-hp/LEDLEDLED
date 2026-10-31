@@ -1,6 +1,7 @@
 package show
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -57,6 +58,15 @@ func TestValidateCatchesBadRefs(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q missing %q", err, want)
 		}
+	}
+}
+
+func TestNormalizeEmptyListsAreNotNull(t *testing.T) {
+	s := &Show{Groups: []Group{{Name: "g"}}}
+	s.Normalize()
+	b, _ := json.Marshal(s)
+	if strings.Contains(string(b), "null") {
+		t.Errorf("normalised show contains null: %s", b)
 	}
 }
 
