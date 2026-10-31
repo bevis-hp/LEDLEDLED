@@ -18,8 +18,12 @@ import (
 	"ledledled/internal/library"
 	"ledledled/internal/server"
 	"ledledled/internal/show"
+	"ledledled/internal/sysinfo"
 	"ledledled/internal/webui"
 )
+
+// version is set at build time: -ldflags "-X main.version=..."
+var version = "dev"
 
 func main() {
 	configPath := flag.String("config", "show.json", "path to the show file (created if missing)")
@@ -69,6 +73,7 @@ func run(configPath, listen, libDir, portalURL string) error {
 	defer stop()
 
 	srv := server.New(eng, configPath, lib, webui.FS())
+	srv.SetSysInfo(sysinfo.NewReader(version, filepath.Dir(configPath)))
 	if portalURL != "" {
 		srv.SetPortal(portalURL)
 		slog.Info("captive portal enabled", "url", portalURL)
@@ -89,7 +94,7 @@ func run(configPath, listen, libDir, portalURL string) error {
 		eng.Run(ctx)
 		close(engDone)
 	}()
-	slog.Info("engine running", "config", configPath,
+	slog.Info("engine running", "version", version, "config", configPath,
 		"controllers", len(sh.Controllers), "strips", len(sh.Strips), "fps", sh.Settings.FPS)
 
 	<-ctx.Done()

@@ -22,6 +22,7 @@ import (
 	"ledledled/internal/output"
 	"ledledled/internal/pixel"
 	"ledledled/internal/show"
+	"ledledled/internal/sysinfo"
 	"ledledled/internal/timeline"
 )
 
@@ -32,6 +33,7 @@ type Server struct {
 	lib    *library.Store
 	ui     fs.FS
 	portal *portal
+	sys    *sysinfo.Reader
 
 	mu      sync.Mutex
 	clients map[*client]struct{}
@@ -58,6 +60,25 @@ func New(eng *engine.Engine, showPath string, lib *library.Store, ui fs.FS) *Ser
 // SetPortal enables captive-portal handling, redirecting unknown hosts and
 // OS connectivity probes to url (e.g. "http://10.42.0.1/"). "" disables it.
 func (s *Server) SetPortal(url string) { s.portal = newPortal(url) }
+
+// SetSysInfo adds host health (temperature, uptime, Pi power flags) to
+// status responses.
+func (s *Server) SetSysInfo(r *sysinfo.Reader) { s.sys = r }
+
+// statusPayload is the engine status plus host health.
+type statusPayload struct {
+	engine.Status
+	System *sysinfo.Info `json:"system,omitempty"`
+}
+
+func (s *Server) status() statusPayload {
+	p := statusPayload{Status: s.eng.Status()}
+	if s.sys != nil {
+		info := s.sys.Read()
+		p.System = &info
+	}
+	return p
+}
 
 // Close flushes any unsaved changes.
 func (s *Server) Close() { s.saver.Flush() }
@@ -137,7 +158,7 @@ func (s *Server) getAudioDevices(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.eng.Status())
+	writeJSON(w, http.StatusOK, s.status())
 }
 
 func (s *Server) postToggle(set func(bool)) http.HandlerFunc {
@@ -150,7 +171,7 @@ func (s *Server) postToggle(set func(bool)) http.HandlerFunc {
 			return
 		}
 		set(body.On)
-		writeJSON(w, http.StatusOK, s.eng.Status())
+		writeJSON(w, http.StatusOK, s.status())
 	}
 }
 
@@ -173,7 +194,7 @@ func (s *Server) postIdentify(w http.ResponseWriter, r *http.Request) {
 func (s *Server) postTap(w http.ResponseWriter, r *http.Request) {
 	s.eng.Tap()
 	s.saver.Schedule(s.eng.Show()) // persist the tapped BPM
-	writeJSON(w, http.StatusOK, s.eng.Status())
+	writeJSON(w, http.StatusOK, s.status())
 }
 
 func (s *Server) postTempo(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +207,7 @@ func (s *Server) postTempo(w http.ResponseWriter, r *http.Request) {
 	}
 	s.eng.SetBPM(body.BPM)
 	s.saver.Schedule(s.eng.Show())
-	writeJSON(w, http.StatusOK, s.eng.Status())
+	writeJSON(w, http.StatusOK, s.status())
 }
 
 func (s *Server) postTransport(w http.ResponseWriter, r *http.Request) {
@@ -250,7 +271,7 @@ func (s *Server) ws(w http.ResponseWriter, r *http.Request) {
 		case msg := <-c.text:
 			err = write(websocket.MessageText, msg)
 		case <-statusTick.C:
-			b, _ := json.Marshal(map[string]any{"type": "status", "status": s.eng.Status()})
+			b, _ := json.Marshal(map[string]any{"type": "status", "status": s.status()})
 			err = write(websocket.MessageText, b)
 		}
 		if err != nil {

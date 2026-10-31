@@ -12,6 +12,8 @@
 BINARY   := ledledled
 PI_HOST  ?= pi@ledpi.local
 PI_DIR   ?= /opt/ledledled
+VERSION  := $(shell git describe --always --dirty 2>/dev/null || echo dev)
+LDFLAGS  := -X main.version=$(VERSION)
 
 .PHONY: all frontend build run dev test pi install-pi network-pi deploy clean
 
@@ -21,7 +23,7 @@ frontend:
 	cd frontend && npm install && npm run build
 
 build:
-	go build -o bin/$(BINARY) ./cmd/ledledled
+	go build -ldflags="$(LDFLAGS)" -o bin/$(BINARY) ./cmd/ledledled
 
 run:
 	go run ./cmd/ledledled -config dev-config.json -listen :8080
@@ -33,7 +35,7 @@ test:
 	go test ./...
 
 pi: frontend
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" \
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w $(LDFLAGS)" \
 		-o bin/$(BINARY)-linux-arm64 ./cmd/ledledled
 
 install-pi: pi
