@@ -1,48 +1,94 @@
 <script>
-  // Renders the right control for one effect parameter (from its schema).
-  /** @type {{ def: any, params: Record<string, any>, onchange: () => void }} */
-  let { def, params, onchange } = $props();
+  // One parameter control, built from the effect's schema.
+  //
+  // `keyState` drives the keyframe button: 'none' (not animated), 'track'
+  // (animated, no key at the playhead) or 'on' (key at the playhead).
+  // `mod` names the modulation source driving it, if any.
+  /** @type {{ def: any, value: any, onchange: (v:any)=>void, keyState?: string, onkey?: ()=>void, mod?: string|null }} */
+  let { def, value, onchange, keyState = 'none', onkey, mod = null } = $props();
+
+  let animatable = $derived(def.type === 'number' || def.type === 'color');
+  const fmt = (v) => Number(v).toFixed(def.step >= 1 ? 0 : 2);
 </script>
 
-<label class="param">
-  <span class="label">{def.label}</span>
-  {#if def.type === 'number'}
-    <input
-      type="range"
-      min={def.min}
-      max={def.max}
-      step={def.step || 0.01}
-      bind:value={params[def.name]}
-      oninput={onchange}
-    />
-    <span class="value">{Number(params[def.name]).toFixed(def.step >= 1 ? 0 : 2)}</span>
-  {:else if def.type === 'color'}
-    <input type="color" bind:value={params[def.name]} oninput={onchange} />
-    <span class="value mono">{params[def.name]}</span>
-  {:else if def.type === 'bool'}
-    <input type="checkbox" bind:checked={params[def.name]} onchange={onchange} />
+<div class="param" class:animated={keyState !== 'none'}>
+  <span class="label">
+    {def.label}
+    {#if mod}<span class="mod" title="Driven by a modulator">~{mod}</span>{/if}
+  </span>
+  <span class="control">
+    {#if def.type === 'number'}
+      <input type="range" min={def.min} max={def.max} step={def.step || 0.01} {value} oninput={(e) => onchange(Number(e.currentTarget.value))} />
+    {:else if def.type === 'color'}
+      <input type="color" {value} oninput={(e) => onchange(e.currentTarget.value)} />
+    {:else if def.type === 'bool'}
+      <input type="checkbox" checked={value} onchange={(e) => onchange(e.currentTarget.checked)} />
+    {:else if def.type === 'select'}
+      <select {value} onchange={(e) => onchange(e.currentTarget.value)}>
+        {#each def.options as o (o)}<option value={o}>{o}</option>{/each}
+      </select>
+    {/if}
+  </span>
+  <span class="value mono">{def.type === 'number' ? fmt(value) : def.type === 'color' ? value : ''}</span>
+  {#if animatable && onkey}
+    <button
+      class="key"
+      class:on={keyState === 'on'}
+      class:track={keyState === 'track'}
+      title={keyState === 'on' ? 'Remove keyframe at playhead' : 'Add keyframe at playhead'}
+      onclick={onkey}>{keyState === 'on' ? '◆' : '◇'}</button
+    >
+  {:else}
+    <span></span>
   {/if}
-</label>
+</div>
 
 <style>
   .param {
     display: grid;
-    grid-template-columns: 8.5rem 1fr 3.5rem;
+    grid-template-columns: 8rem 1fr 3.6rem 2rem;
     align-items: center;
-    gap: 0.5rem;
-    margin: 0.25rem 0;
+    gap: 0.4rem;
+    margin: 0.2rem 0;
   }
   .label {
     font-size: 0.85rem;
     color: var(--muted);
   }
-  .value {
-    font-size: 0.8rem;
-    text-align: right;
-    color: var(--muted);
+  .animated .label {
+    color: var(--warn);
+  }
+  .mod {
+    font-size: 0.7rem;
+    color: var(--accent);
+    margin-left: 0.2rem;
+  }
+  .control > * {
+    width: 100%;
+  }
+  input[type='checkbox'] {
+    width: 1.1rem;
   }
   input[type='color'] {
-    width: 100%;
     height: 2rem;
+  }
+  .value {
+    font-size: 0.75rem;
+    text-align: right;
+    color: var(--muted);
+    overflow: hidden;
+  }
+  .key {
+    min-width: 2rem;
+    min-height: 2rem;
+    padding: 0;
+    color: var(--muted);
+  }
+  .key.track {
+    color: var(--warn);
+  }
+  .key.on {
+    color: var(--warn);
+    border-color: var(--warn);
   }
 </style>

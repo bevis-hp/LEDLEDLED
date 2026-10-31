@@ -1,11 +1,14 @@
 <script>
   import { app, save, setOutput, setBlackout } from './lib/state.svelte.js';
   import LiveTab from './components/LiveTab.svelte';
+  import TimelineTab from './components/TimelineTab.svelte';
+  import Transport from './components/Transport.svelte';
   import GroupsTab from './components/GroupsTab.svelte';
   import SetupTab from './components/SetupTab.svelte';
 
   const tabs = [
     { id: 'live', label: 'Live' },
+    { id: 'timeline', label: 'Timeline' },
     { id: 'groups', label: 'Groups' },
     { id: 'setup', label: 'Setup' },
   ];
@@ -30,6 +33,7 @@
     {/if}
   </div>
   {#if app.show}
+    <Transport />
     <label class="master">
       <span>Master {Math.round(app.show.settings.brightness * 100)}%</span>
       <input type="range" min="0" max="1" step="0.01" bind:value={app.show.settings.brightness} oninput={save} />
@@ -54,6 +58,8 @@
     <p class="hint">Connecting…</p>
   {:else if tab === 'live'}
     <LiveTab />
+  {:else if tab === 'timeline'}
+    <TimelineTab />
   {:else if tab === 'groups'}
     <GroupsTab />
   {:else}

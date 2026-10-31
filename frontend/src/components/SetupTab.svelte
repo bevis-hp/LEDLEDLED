@@ -1,6 +1,27 @@
 <script>
   // Setup: pixel controllers (AirPixels), strips, and global settings.
   import { app, save, uid, identify } from '../lib/state.svelte.js';
+  import AudioPanel from './AudioPanel.svelte';
+  import LibraryPanel from './LibraryPanel.svelte';
+
+  // Typical draw per pixel (one addressable unit). 12V WS2811 strips drive
+  // 3 LEDs per pixel. Measure your own strip at full white to refine.
+  const powerPresets = [
+    { name: 'WS2812B 5V', volts: 5, ma: 20, idle: 1 },
+    { name: 'SK6812 RGBW 5V', volts: 5, ma: 20, idle: 1 },
+    { name: 'WS2811 12V (3 LEDs/px)', volts: 12, ma: 20, idle: 2 },
+    { name: 'WS2815 12V', volts: 12, ma: 12, idle: 2 },
+  ];
+  function applyPowerPreset(s, ev) {
+    const p = powerPresets[Number(ev.currentTarget.value)];
+    ev.currentTarget.value = '';
+    if (!p) return;
+    Object.assign(s, { volts: p.volts, milliampsPerChannel: p.ma, idleMilliamps: p.idle });
+    save();
+  }
+  const powerFor = (id) => app.status?.strips?.find((p) => p.id === id);
+  // Worst case: every channel at full.
+  const maxDraw = (s) => (s.pixels * (s.colorOrder.length * s.milliampsPerChannel + s.idleMilliamps)) / 1000;
 
   const statusFor = (id) => app.status?.controllers?.find((c) => c.id === id);
 
@@ -46,6 +67,10 @@
       brightness: 1,
       reverse: false,
       whiteMode: 'auto',
+      volts: 5,
+      milliampsPerChannel: 20,
+      idleMilliamps: 1,
+      maxAmps: 0,
     });
     save();
   }
@@ -152,6 +177,7 @@
   <h2>Strips</h2>
   <p class="hint">Strips on the same controller are chained in this order (first strip starts at channel 1).</p>
   {#each app.show.strips as s, i (s.id)}
+    {@const pw = powerFor(s.id)}
     <div class="card">
       <div class="row">
         <input class="grow name" bind:value={s.name} onchange={save} />
@@ -194,6 +220,41 @@
           </label>
         {/if}
       </div>
+
+      <details class="power">
+        <summary>
+          Power: {s.volts} V
+          {#if s.maxAmps > 0}· limit {s.maxAmps} A{/if}
+          {#if pw}
+            · now <b class:warn={pw.limited}>{pw.amps.toFixed(2)} A / {pw.watts.toFixed(1)} W</b>
+            {#if pw.limited}<span class="warn">(limited from {pw.requestedAmps.toFixed(2)} A)</span>{/if}
+          {/if}
+        </summary>
+        <div class="grid3">
+          <label>
+            <span>Preset</span>
+            <select onchange={(e) => applyPowerPreset(s, e)}>
+              <option value="">Choose strip type…</option>
+              {#each powerPresets as p, i (p.name)}<option value={i}>{p.name}</option>{/each}
+            </select>
+          </label>
+          <label>
+            <span>Supply voltage</span>
+            <select bind:value={s.volts} onchange={save}>
+              <option value={5}>5 V</option>
+              <option value={12}>12 V</option>
+              <option value={24}>24 V</option>
+            </select>
+          </label>
+          <label><span>mA per channel (full, per pixel)</span><input type="number" min="0" step="0.5" bind:value={s.milliampsPerChannel} onchange={save} /></label>
+          <label><span>Idle mA per pixel</span><input type="number" min="0" step="0.1" bind:value={s.idleMilliamps} onchange={save} /></label>
+          <label><span>Max amps (0 = no limit)</span><input type="number" min="0" step="0.1" bind:value={s.maxAmps} onchange={save} /></label>
+        </div>
+        <p class="hint">
+          Full-on worst case ≈ {maxDraw(s).toFixed(2)} A ({(maxDraw(s) * s.volts).toFixed(0)} W). Set the max to what your supply and
+          power injection can carry; brightness is scaled down automatically to stay under it.
+        </p>
+      </details>
     </div>
   {/each}
   <button class="primary" onclick={addStrip}>+ Add strip</button>
@@ -214,10 +275,16 @@
 </section>
 
 <section>
-  <h2>Backup</h2>
+  <h2>Audio &amp; tempo</h2>
+  <AudioPanel />
+</section>
+
+<section>
+  <h2>Library</h2>
+  <LibraryPanel />
   <div class="row">
-    <button onclick={exportShow}>Export show</button>
-    <label class="button">Import show <input type="file" accept="application/json" onchange={importShow} hidden /></label>
+    <button onclick={exportShow}>Download current show</button>
+    <label class="button">Import show file (replaces current) <input type="file" accept="application/json" onchange={importShow} hidden /></label>
   </div>
 </section>
 
@@ -227,5 +294,16 @@
   }
   .card.muted {
     opacity: 0.6;
+  }
+  .power {
+    margin-top: 0.6rem;
+    font-size: 0.85rem;
+  }
+  .power summary {
+    cursor: pointer;
+    color: var(--muted);
+  }
+  .warn {
+    color: var(--warn);
   }
 </style>
