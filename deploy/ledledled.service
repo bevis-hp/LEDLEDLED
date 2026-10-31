@@ -1,0 +1,24 @@
+[Unit]
+Description=LEDLEDLED pixel strip controller (sACN / Art-Net + web UI)
+Wants=network-online.target
+After=network-online.target NetworkManager.service
+
+[Service]
+ExecStart=/opt/ledledled/ledledled -config /var/lib/ledledled/show.json -listen :80
+Restart=always
+RestartSec=2
+
+# Run as an unprivileged throwaway user. StateDirectory creates
+# /var/lib/ledledled (owned by that user) for the show file.
+DynamicUser=yes
+StateDirectory=ledledled
+# Allow binding port 80 so phones can just browse to http://10.42.0.1
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
