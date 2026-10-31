@@ -27,10 +27,11 @@ import (
 
 // Server wires HTTP handlers to the engine.
 type Server struct {
-	eng   *engine.Engine
-	saver *saver
-	lib   *library.Store
-	ui    fs.FS
+	eng    *engine.Engine
+	saver  *saver
+	lib    *library.Store
+	ui     fs.FS
+	portal *portal
 
 	mu      sync.Mutex
 	clients map[*client]struct{}
@@ -53,6 +54,10 @@ func New(eng *engine.Engine, showPath string, lib *library.Store, ui fs.FS) *Ser
 		clients: map[*client]struct{}{},
 	}
 }
+
+// SetPortal enables captive-portal handling, redirecting unknown hosts and
+// OS connectivity probes to url (e.g. "http://10.42.0.1/"). "" disables it.
+func (s *Server) SetPortal(url string) { s.portal = newPortal(url) }
 
 // Close flushes any unsaved changes.
 func (s *Server) Close() { s.saver.Flush() }
@@ -79,7 +84,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/library/shows/{name}/load", s.libLoad)
 	mux.HandleFunc("GET /ws", s.ws)
 	mux.Handle("/", s.static())
-	return logRequests(mux)
+	return logRequests(s.portal.wrap(mux))
 }
 
 func (s *Server) getShow(w http.ResponseWriter, r *http.Request) {

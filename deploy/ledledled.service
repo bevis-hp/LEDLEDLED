@@ -4,6 +4,9 @@ Wants=network-online.target
 After=network-online.target NetworkManager.service
 
 [Service]
+# Captive portal target (phones pop up the UI on joining). setup-network.sh
+# writes a drop-in that sets or clears this to match the UI network.
+Environment=LEDLEDLED_PORTAL=http://10.42.0.1/
 ExecStart=/opt/ledledled/ledledled -config /var/lib/ledledled/show.json -listen :80
 Restart=always
 RestartSec=2

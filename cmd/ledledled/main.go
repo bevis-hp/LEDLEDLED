@@ -25,6 +25,8 @@ func main() {
 	configPath := flag.String("config", "show.json", "path to the show file (created if missing)")
 	listen := flag.String("listen", ":8080", "HTTP listen address for the web UI")
 	libDir := flag.String("library", "", "directory for saved shows/presets (default: <config dir>/library)")
+	portalURL := flag.String("portal", os.Getenv("LEDLEDLED_PORTAL"),
+		"captive portal URL, e.g. http://10.42.0.1/ (needs wildcard DNS; default $LEDLEDLED_PORTAL, empty = off)")
 	debug := flag.Bool("debug", false, "verbose logging")
 	flag.Parse()
 
@@ -37,13 +39,13 @@ func main() {
 	if *libDir == "" {
 		*libDir = filepath.Join(filepath.Dir(*configPath), "library")
 	}
-	if err := run(*configPath, *listen, *libDir); err != nil {
+	if err := run(*configPath, *listen, *libDir, *portalURL); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath, listen, libDir string) error {
+func run(configPath, listen, libDir, portalURL string) error {
 	lib, err := library.New(libDir)
 	if err != nil {
 		return err
@@ -67,6 +69,10 @@ func run(configPath, listen, libDir string) error {
 	defer stop()
 
 	srv := server.New(eng, configPath, lib, webui.FS())
+	if portalURL != "" {
+		srv.SetPortal(portalURL)
+		slog.Info("captive portal enabled", "url", portalURL)
+	}
 	defer srv.Close()
 
 	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}

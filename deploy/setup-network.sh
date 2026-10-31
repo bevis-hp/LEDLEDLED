@@ -33,14 +33,20 @@ PIX_CHANNEL="${PIX_CHANNEL:-6}"
 # Regulatory country, required for AP mode (and for 5 GHz).
 COUNTRY="${COUNTRY:-GB}"
 
+# Captive portal: answer every DNS name on the networks with the Pi, so
+# phones pop up the controller when they join. CAPTIVE=0 only maps led.lan.
+CAPTIVE="${CAPTIVE:-1}"
+
 if [[ $EUID -ne 0 ]]; then
-  exec sudo --preserve-env=UI_SSID,UI_PASS,UI_ADDR,UI_BAND,UI_CHANNEL,PIX_SSID,PIX_PASS,PIX_ADDR,PIX_CHANNEL,COUNTRY "$0" "$@"
+  exec sudo --preserve-env=UI_SSID,UI_PASS,UI_ADDR,UI_BAND,UI_CHANNEL,PIX_SSID,PIX_PASS,PIX_ADDR,PIX_CHANNEL,COUNTRY,CAPTIVE "$0" "$@"
 fi
 
 if [[ "${1:-}" == "--remove" ]]; then
   nmcli connection delete ledledled-ui 2>/dev/null || true
   nmcli connection delete ledledled-pix 2>/dev/null || true
   rm -f /etc/NetworkManager/dnsmasq-shared.d/ledledled.conf
+  rm -f /etc/systemd/system/ledledled.service.d/portal.conf
+  systemctl daemon-reload
   echo "Removed LEDLEDLED access points."
   exit 0
 fi
@@ -99,9 +105,21 @@ make_ap() { # name mac ssid pass addr band channel powersave
 make_ap ledledled-ui "$onboard_mac" "$UI_SSID" "$UI_PASS" "$UI_ADDR" "$UI_BAND" "$UI_CHANNEL" 2
 make_ap ledledled-pix "$usb_mac" "$PIX_SSID" "$PIX_PASS" "$PIX_ADDR" bg "$PIX_CHANNEL" 2
 
-# Friendly name for the UI: http://led.lan resolves to the Pi on the UI AP.
-mkdir -p /etc/NetworkManager/dnsmasq-shared.d
-echo "address=/led.lan/${UI_ADDR%/*}" > /etc/NetworkManager/dnsmasq-shared.d/ledledled.conf
+# DNS for the AP clients (NetworkManager's dnsmasq). led.lan always points
+# at the Pi; with the captive portal on, every other name does too.
+UI_IP="${UI_ADDR%/*}"
+mkdir -p /etc/NetworkManager/dnsmasq-shared.d /etc/systemd/system/ledledled.service.d
+if [[ "$CAPTIVE" == "1" ]]; then
+  echo "address=/#/${UI_IP}" > /etc/NetworkManager/dnsmasq-shared.d/ledledled.conf
+  PORTAL="http://${UI_IP}/"
+else
+  echo "address=/led.lan/${UI_IP}" > /etc/NetworkManager/dnsmasq-shared.d/ledledled.conf
+  PORTAL=""
+fi
+# Tell the app where the portal lives (or that it's off).
+printf '[Service]\nEnvironment=LEDLEDLED_PORTAL=%s\n' "$PORTAL" > /etc/systemd/system/ledledled.service.d/portal.conf
+systemctl daemon-reload
+systemctl try-restart ledledled.service || true
 
 nmcli connection up ledledled-ui
 nmcli connection up ledledled-pix
@@ -110,7 +128,7 @@ cat <<EOF
 
 Done.
   Phones/laptops: join Wi-Fi "$UI_SSID" (password: $UI_PASS)
-                  then open http://${UI_ADDR%/*}  (or http://led.lan)
+                  $( [[ "$CAPTIVE" == "1" ]] && echo "the controller should pop up automatically; otherwise " )open http://${UI_ADDR%/*}  (or http://led.lan)
   AirPixels:      join Wi-Fi "$PIX_SSID" (password: $PIX_PASS)
                   with static IPs in ${PIX_ADDR%.*}.x, e.g. ${PIX_ADDR%.*}.11, .12, .13
                   (subnet mask 255.255.255.0)
