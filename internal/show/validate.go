@@ -69,7 +69,18 @@ func (s *Show) Normalize() {
 			if st.Brightness == 0 {
 				st.Brightness = 1
 			}
+			if st.IdleMilliamps == 0 {
+				st.IdleMilliamps = 1
+			}
 		}
+		if st.Volts <= 0 {
+			st.Volts = 5
+		}
+		if st.MilliampsPerChannel <= 0 {
+			st.MilliampsPerChannel = 20
+		}
+		st.IdleMilliamps = max(st.IdleMilliamps, 0)
+		st.MaxAmps = max(st.MaxAmps, 0)
 		if st.ColorOrder == "" {
 			st.ColorOrder = "GRB"
 		}

@@ -87,6 +87,10 @@ func Default() *Show {
 			Pixels:       200,
 			ColorOrder:   "GRB",
 			Brightness:   1,
+			// WS2812B 5V defaults; set MaxAmps to your PSU/injection limit.
+			Volts:               5,
+			MilliampsPerChannel: 20,
+			IdleMilliamps:       1,
 		})
 	}
 	s.Layers = []Layer{{

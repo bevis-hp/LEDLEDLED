@@ -22,11 +22,23 @@ type plan struct {
 }
 
 type stripPlan struct {
+	id         string
 	px         []pixel.Color // rendered colours, logical order (pixel 0 = start)
 	scratch    []pixel.Color // reversal buffer for Reverse strips
 	brightness float32
 	reverse    bool
 	white      bool // extract white on RGBW
+
+	power   pixel.PowerModel
+	maxMA   float64
+	powered bool // attached to a controller, so it has encoded output
+	// Power measurements: last frame, and peaks over the current and the
+	// previous one-second window (the previous one is what we report).
+	ma, scale         float64
+	winMA, winReqMA   float64
+	winLimited        bool
+	peakMA, peakReqMA float64
+	limited           bool
 }
 
 // pixelRef addresses one pixel of one strip.
@@ -83,6 +95,10 @@ func compile(s *show.Show) (*plan, error) {
 	for i, st := range s.Strips {
 		stripIdx[st.ID] = i
 		p.strips = append(p.strips, stripPlan{
+			id:         st.ID,
+			power:      pixel.PowerModel{Volts: st.Volts, MilliampsPerChannel: st.MilliampsPerChannel, IdleMilliamps: st.IdleMilliamps},
+			maxMA:      st.MaxAmps * 1000,
+			scale:      1,
 			px:         make([]pixel.Color, st.Pixels),
 			scratch:    make([]pixel.Color, st.Pixels),
 			brightness: float32(st.Brightness),

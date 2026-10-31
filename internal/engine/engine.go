@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"log/slog"
+	"math"
 	"sync"
 	"time"
 
@@ -56,6 +57,7 @@ type ctrlStats struct {
 func New(s *show.Show) (*Engine, error) {
 	e := &Engine{
 		start:    time.Now(),
+		fpsAt:    time.Now(),
 		outputOn: true,
 		identify: map[string]time.Time{},
 		stats:    map[string]*ctrlStats{},
@@ -222,6 +224,7 @@ func (e *Engine) frame(now time.Time, preview bool) {
 
 	e.render(p, t, e.clock.Beat(t), now)
 
+	e.encode(p)
 	if e.outputOn {
 		e.send(p)
 	}
@@ -233,6 +236,7 @@ func (e *Engine) frame(now time.Time, preview bool) {
 	if el := now.Sub(e.fpsAt); el >= time.Second {
 		e.fps = float64(e.frames) / el.Seconds()
 		e.frames, e.fpsAt = 0, now
+		rollPowerWindow(p)
 	}
 }
 
@@ -289,14 +293,12 @@ func identifyPattern(px []pixel.Color, now time.Time) {
 	}
 }
 
-// send encodes strips into each controller's stream and transmits it.
-func (e *Engine) send(p *plan) {
+// encode converts every strip into its controller's channel stream,
+// applying brightness, gamma, white extraction and the power limit.
+func (e *Engine) encode(p *plan) {
 	master := float32(p.show.Settings.Brightness)
 	for ci := range p.controllers {
 		c := &p.controllers[ci]
-		if c.disabled || c.universes == 0 {
-			continue
-		}
 		for _, sp := range c.strips {
 			sb := &p.strips[sp.StripIndex]
 			src := sb.px
@@ -306,11 +308,38 @@ func (e *Engine) send(p *plan) {
 				}
 				src = sb.scratch
 			}
-			sp.Order.Encode(c.stream[sp.ChannelOffset:], src, pixel.EncodeOptions{
+			n := len(src) * sp.Order.Channels()
+			out := c.stream[sp.ChannelOffset : sp.ChannelOffset+n]
+			sp.Order.Encode(out, src, pixel.EncodeOptions{
 				Brightness:   master * sb.brightness,
 				Gamma:        p.gamma,
 				ExtractWhite: sb.white,
 			})
+			req, got, scale := sb.power.Limit(out, len(src), sb.maxMA)
+			sb.powered = true
+			sb.ma, sb.scale = got, scale
+			sb.winMA = max(sb.winMA, got)
+			sb.winReqMA = max(sb.winReqMA, req)
+			sb.winLimited = sb.winLimited || scale < 1
+		}
+	}
+}
+
+// rollPowerWindow publishes the last second's power peaks.
+func rollPowerWindow(p *plan) {
+	for i := range p.strips {
+		s := &p.strips[i]
+		s.peakMA, s.peakReqMA, s.limited = s.winMA, s.winReqMA, s.winLimited
+		s.winMA, s.winReqMA, s.winLimited = 0, 0, false
+	}
+}
+
+// send transmits each enabled controller's universes.
+func (e *Engine) send(p *plan) {
+	for ci := range p.controllers {
+		c := &p.controllers[ci]
+		if c.disabled || c.universes == 0 {
+			continue
 		}
 		st := e.statsFor(c.id)
 		for u := range c.universes {
@@ -369,6 +398,10 @@ func (e *Engine) encodePreview(p *plan) []byte {
 	master := float32(p.show.Settings.Brightness)
 	for _, s := range p.strips {
 		k := master * s.brightness
+		if s.scale < 1 {
+			// Bytes were scaled after gamma; undo gamma to approximate it.
+			k *= float32(math.Pow(s.scale, 1/p.show.Settings.Gamma))
+		}
 		for _, c := range s.px {
 			c = c.Scale(k).Clamp()
 			buf[off], buf[off+1], buf[off+2] = byte(c.R*255+0.5), byte(c.G*255+0.5), byte(c.B*255+0.5)
@@ -412,6 +445,16 @@ type Status struct {
 	BPM         float64            `json:"bpm"`
 	Beat        float64            `json:"beat"`
 	Controllers []ControllerStatus `json:"controllers"`
+	Strips      []StripStatus      `json:"strips"`
+}
+
+// StripStatus reports estimated power over the last second.
+type StripStatus struct {
+	ID            string  `json:"id"`
+	Amps          float64 `json:"amps"`          // peak draw after limiting
+	RequestedAmps float64 `json:"requestedAmps"` // peak draw the effects asked for
+	Watts         float64 `json:"watts"`
+	Limited       bool    `json:"limited"`
 }
 
 // ControllerStatus reports per-controller patch and send health.
@@ -437,6 +480,15 @@ func (e *Engine) Status() Status {
 		s.Controllers = append(s.Controllers, ControllerStatus{
 			ID: c.id, Universes: c.universes, UniverseSize: c.universeSize, Channels: c.channels,
 			Packets: st.packets, Errors: st.errors, LastError: st.lastErr, Warnings: c.warnings,
+		})
+	}
+	for _, sp := range e.plan.strips {
+		if !sp.powered {
+			continue
+		}
+		s.Strips = append(s.Strips, StripStatus{
+			ID: sp.id, Amps: sp.peakMA / 1000, RequestedAmps: sp.peakReqMA / 1000,
+			Watts: sp.peakMA / 1000 * sp.power.Volts, Limited: sp.limited,
 		})
 	}
 	return s

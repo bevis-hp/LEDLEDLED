@@ -69,6 +69,12 @@ type Strip struct {
 	Brightness   float64 `json:"brightness"` // per-strip trim 0..1
 	Reverse      bool    `json:"reverse"`    // physical pixel 0 is at the far end
 	WhiteMode    string  `json:"whiteMode"`  // RGBW only: "auto" or "off"
+
+	// Power model and limit. See pixel.PowerModel for typical values.
+	Volts               float64 `json:"volts"`               // 5 or 12 (used for watts)
+	MilliampsPerChannel float64 `json:"milliampsPerChannel"` // one channel at full, per pixel
+	IdleMilliamps       float64 `json:"idleMilliamps"`       // quiescent draw per pixel
+	MaxAmps             float64 `json:"maxAmps"`             // 0 = no limit
 }
 
 // Section is an inclusive pixel range on one strip. Reverse flips the

@@ -136,3 +136,29 @@ func TestApplyKeepsTempoButLoadRestoresIt(t *testing.T) {
 		t.Errorf("after Load bpm = %v, want 100", got)
 	}
 }
+
+func TestPowerLimitScalesWireData(t *testing.T) {
+	s, rx := testShow(t)
+	s.Strips[0].MilliampsPerChannel = 20
+	s.Strips[0].IdleMilliamps = 0
+	s.Strips[0].MaxAmps = 0.12 // full white would be 4 * 60 mA = 0.24 A
+	s.Layers = []show.Layer{{Name: "w", Effect: "solid", Params: map[string]any{"color": "#ffffff"}, Opacity: 1}}
+	e, err := New(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.frame(time.Now(), false)
+	_, data := readUniverse(t, rx)
+	for i, b := range data {
+		if b > 128 || b < 120 {
+			t.Fatalf("byte %d = %d, want ~127 (half power)", i, b)
+		}
+	}
+	e.mu.Lock()
+	rollPowerWindow(e.plan)
+	e.mu.Unlock()
+	st := e.Status().Strips[0]
+	if !st.Limited || st.Amps > 0.12 || st.RequestedAmps < 0.239 || st.Watts > 0.6 {
+		t.Errorf("status = %+v", st)
+	}
+}
