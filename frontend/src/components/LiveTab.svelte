@@ -89,6 +89,11 @@
   </p>
   {#each app.show.layers as layer, i (layer.id)}
     <LayerCard {layer} index={i} count={app.show.layers.length} onmove={(d) => move(i, d)} onremove={() => remove(i)} onpreset={refreshPresets} />
+  {:else}
+    <div class="card empty">
+      <p>No layers yet: the strips are dark.</p>
+      <p class="hint">Add a layer and pick an effect, or make a group on the Groups tab and use “+ Colour layer” to colour just those pixels.</p>
+    </div>
   {/each}
   <div class="row">
     <button class="primary" onclick={addLayer}>+ Add layer</button>
@@ -111,6 +116,9 @@
   }
   .strip-name small {
     color: var(--muted);
+  }
+  .empty p {
+    margin: 0.2rem 0;
   }
   .power {
     float: right;

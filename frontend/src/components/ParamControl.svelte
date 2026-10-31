@@ -57,13 +57,14 @@
 <style>
   .param {
     display: grid;
-    grid-template-columns: 8rem 1fr 3.6rem 2rem;
+    grid-template-columns: minmax(5.5rem, 8rem) 1fr 3.2rem 2rem;
     align-items: center;
     gap: 0.4rem;
     margin: 0.2rem 0;
   }
   .label {
-    font-size: 0.85rem;
+    font-size: 0.8rem;
+    line-height: 1.15;
     color: var(--muted);
   }
   .animated .label {

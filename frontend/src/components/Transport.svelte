@@ -1,6 +1,6 @@
 <script>
   // Header transport: tempo (BPM + tap), beat indicator, timeline play
-  // state and a small audio meter.
+  // state. The audio level is drawn by App as a line under the header.
   import { app, live, tap, setBpm, transport } from '../lib/state.svelte.js';
 
   let beatInBar = $derived(((Math.floor(live.beat) % 4) + 4) % 4);
@@ -13,15 +13,14 @@
 </script>
 
 <div class="transport">
-  <label class="bpm" title="Tempo (beats per minute)">
-    <input type="number" min="20" max="300" step="0.1" value={live.bpm.toFixed(1)} onchange={onBpm} />
-    <span>BPM</span>
+  <label class="bpm" class:auto={app.show?.settings.audio.autoBpm && live.audio?.bpm} title="Tempo in beats per minute (green outline = following the audio)">
+    <input type="number" min="20" max="300" step="0.1" value={live.bpm.toFixed(1)} onchange={onBpm} aria-label="BPM" />
+    <span>bpm</span>
   </label>
   <button class="tap" class:flash onpointerdown={tap} title="Tap on the beat (2+ taps set the tempo; 1 tap re-syncs the downbeat)">TAP</button>
   <div class="beats" title="Beat in bar">
     {#each [0, 1, 2, 3] as b (b)}<span class:on={b === beatInBar}></span>{/each}
   </div>
-  {#if app.show?.settings.audio.autoBpm && live.audio?.bpm}<span class="auto" title="Following detected tempo">auto</span>{/if}
 
   <span class="spacer"></span>
 
@@ -34,21 +33,15 @@
   >
   <span class="pos mono">{live.timeline.pos.toFixed(1)}/{live.timeline.length}</span>
 
-  {#if live.audio}
-    <span class="meter" title="Audio level">
-      <span style="width: {Math.round(live.audio.level * 100)}%"></span>
-      <i class:hit={live.audio.beat > 0.5}></i>
-    </span>
-  {/if}
+
 </div>
 
 <style>
   .transport {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    margin: 0.3rem 0;
-    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin: 0.3rem 0 0.1rem;
   }
   .bpm {
     display: inline-flex;
@@ -58,8 +51,20 @@
     color: var(--muted);
   }
   .bpm input {
-    width: 4.6rem;
+    width: 4.4rem;
+    padding-inline: 0.4rem;
     text-align: right;
+    font-variant-numeric: tabular-nums;
+    appearance: textfield; /* no spinner arrows eating the width */
+    -moz-appearance: textfield;
+  }
+  .bpm input::-webkit-inner-spin-button,
+  .bpm input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .bpm.auto input {
+    border-color: var(--ok);
   }
   .tap {
     font-weight: 700;
@@ -84,36 +89,9 @@
   .beats span.on {
     background: var(--accent);
   }
-  .auto {
-    font-size: 0.7rem;
-    color: var(--ok);
-  }
   .pos {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     color: var(--muted);
-    min-width: 4.2rem;
-  }
-  .meter {
-    position: relative;
-    width: 3.5rem;
-    height: 0.6rem;
-    background: var(--line);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  .meter span {
-    position: absolute;
-    inset: 0 auto 0 0;
-    background: var(--ok);
-  }
-  .meter i {
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 0.5rem;
-  }
-  .meter i.hit {
-    background: var(--warn);
+    white-space: nowrap;
   }
 </style>

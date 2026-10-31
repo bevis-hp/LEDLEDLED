@@ -14,6 +14,8 @@
   let effectDef = $derived(app.meta?.effects.find((e) => e.name === layer.effect));
   let numericParams = $derived([opacityDef, ...(effectDef?.params.filter((p) => p.type === 'number') ?? [])]);
   let open = $state(true);
+  const groupName = (id) => (id ? (app.show.groups.find((g) => g.id === id)?.name ?? '?') : 'All pixels');
+  let keyedCount = $derived(app.show.timeline.tracks.filter((t) => t.layerId === layer.id && t.keys.length).length);
   let showMods = $state(false);
 
   const keyBeat = () => snapBeat(live.timeline.pos, ui.snap);
@@ -106,7 +108,16 @@
     <button class="icon danger" title="Delete layer" onclick={onremove}>✕</button>
   </div>
 
-  {#if open}
+  {#if !open}
+    <p class="summary">
+      {effectDef?.label ?? layer.effect} → {groupName(layer.groupId)}
+      {#if layer.blend !== 'normal'}· {layer.blend}{/if}
+      {#if layer.opacity < 1}· {Math.round(layer.opacity * 100)}%{/if}
+      {#if layer.tempoSync}· ♩{/if}
+      {#if keyedCount}<span class="tag key">◆ {keyedCount}</span>{/if}
+      {#if layer.mods.length}<span class="tag mod">~ {layer.mods.length}</span>{/if}
+    </p>
+  {:else}
     <div class="grid2">
       <label>
         <span>Effect</span>
@@ -202,6 +213,21 @@
 </div>
 
 <style>
+  .summary {
+    margin: -0.2rem 0 0 2.75rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .tag {
+    margin-left: 0.4rem;
+    font-size: 0.75rem;
+  }
+  .tag.key {
+    color: var(--warn);
+  }
+  .tag.mod {
+    color: var(--accent);
+  }
   .layer.muted {
     opacity: 0.55;
   }

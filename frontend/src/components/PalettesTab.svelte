@@ -3,6 +3,7 @@
   // Tap the bar to add a stop, drag stops to move them, tap a stop to edit.
   import { app, save, uid } from '../lib/state.svelte.js';
   import { cssGradient, colorAt } from '../lib/palettes.js';
+  import { ask } from '../lib/confirm.svelte.js';
 
   // Selected stop, by palette id + index (the show object is replaced after
   // every save, so references would go stale).
@@ -24,8 +25,8 @@
     save();
   }
 
-  function removePalette(p) {
-    if (!confirm(`Delete palette "${p.name}"? Layers using it go back to their own colours.`)) return;
+  async function removePalette(p) {
+    if (!(await ask(`Delete palette "${p.name}"? Layers using it go back to their own colours.`, { confirmLabel: 'Delete', danger: true }))) return;
     app.show.palettes = app.show.palettes.filter((x) => x.id !== p.id);
     sel = { id: '', index: -1 };
     save();

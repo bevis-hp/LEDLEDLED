@@ -2,6 +2,7 @@
   // Library: named shows and layer presets saved as JSON files on the Pi.
   import { onMount } from 'svelte';
   import { app, library } from '../lib/state.svelte.js';
+  import { ask } from '../lib/confirm.svelte.js';
 
   let shows = $state([]);
   let presets = $state([]);
@@ -30,21 +31,21 @@
     run(async () => {
       const n = name.trim();
       if (!n) return;
-      if (shows.some((s) => s.name === n) && !confirm(`Overwrite "${n}"?`)) return;
+      if (shows.some((s) => s.name === n) && !(await ask(`Overwrite the saved show "${n}"?`, { confirmLabel: 'Overwrite' }))) return;
       await library.saveCurrent(n);
       name = '';
     });
 
   const load = (n) =>
     run(async () => {
-      if (confirm(`Load "${n}"? The current show is replaced on every connected device (save it first if needed).`)) {
+      if (await ask(`Load "${n}"? The current show is replaced on every connected device, so save it first if you want to keep it.`, { confirmLabel: 'Load' })) {
         await library.load(n);
       }
     });
 
   const remove = (kind, n) =>
     run(async () => {
-      if (confirm(`Delete "${n}"?`)) await library.remove(kind, n);
+      if (await ask(`Delete "${n}" from the library?`, { confirmLabel: 'Delete', danger: true })) await library.remove(kind, n);
     });
 
   // Upload a .json file from this device into the library.

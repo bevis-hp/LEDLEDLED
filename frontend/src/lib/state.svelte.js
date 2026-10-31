@@ -143,6 +143,7 @@ async function load() {
     const [meta, show] = await Promise.all([api('GET', '/api/meta'), api('GET', '/api/show')]);
     app.meta = meta;
     app.show = show;
+    if (app.error.startsWith('Could not load')) app.error = ''; // recovered
   } catch (e) {
     app.error = 'Could not load from server: ' + e.message;
   }

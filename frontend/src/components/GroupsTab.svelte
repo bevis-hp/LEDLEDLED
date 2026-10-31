@@ -3,6 +3,7 @@
   // Drag across a strip to add a section to the selected group.
   import { app, save, uid, defaultParams } from '../lib/state.svelte.js';
   import StripCanvas from './StripCanvas.svelte';
+  import { ask } from '../lib/confirm.svelte.js';
 
   let selectedId = $state('');
   let group = $derived(app.show.groups.find((g) => g.id === selectedId) ?? app.show.groups[0]);
@@ -21,8 +22,8 @@
     save();
   }
 
-  function removeGroup() {
-    if (!group || !confirm(`Delete group "${group.name}"? Layers using it will target all pixels.`)) return;
+  async function removeGroup() {
+    if (!group || !(await ask(`Delete group "${group.name}"? Layers using it will target all pixels.`, { confirmLabel: 'Delete', danger: true }))) return;
     for (const l of app.show.layers) if (l.groupId === group.id) l.groupId = '';
     app.show.groups = app.show.groups.filter((g) => g.id !== group.id);
     selectedId = '';

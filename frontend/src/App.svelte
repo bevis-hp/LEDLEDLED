@@ -6,6 +6,8 @@
   import Transport from './components/Transport.svelte';
   import GroupsTab from './components/GroupsTab.svelte';
   import SetupTab from './components/SetupTab.svelte';
+  import ConfirmHost from './components/ConfirmHost.svelte';
+  import { live } from './lib/state.svelte.js';
 
   const tabs = [
     { id: 'live', label: 'Live' },
@@ -24,6 +26,9 @@
     <h1>LEDLEDLED</h1>
     <span class="dot" class:ok={app.connected} title={app.connected ? 'Connected' : 'Disconnected'}></span>
     {#if app.status}<span class="fps">{app.status.fps.toFixed(0)} fps</span>{/if}
+    {#if app.status?.system?.throttle?.underVoltageNow || app.status?.system?.cpuTempC >= 80}
+      <button class="small alert" title="The Pi is under-volted or too hot: see Setup → System" onclick={() => (tab = 'setup')}>⚠ Pi</button>
+    {/if}
     <span class="spacer"></span>
     {#if app.status}
       <button class:on={app.status.outputOn} onclick={() => setOutput(!app.status.outputOn)} title="Stop sending to release the AirPixels (needed to open their config page)">
@@ -35,7 +40,8 @@
     {/if}
   </div>
   {#if app.show}
-    <Transport />
+    <!-- Tempo/timeline controls only matter where you play with them. -->
+    {#if tab === 'live' || tab === 'timeline'}<Transport />{/if}
     <label class="master">
       <span>Master {Math.round(app.show.settings.brightness * 100)}%</span>
       <input type="range" min="0" max="1" step="0.01" bind:value={app.show.settings.brightness} oninput={save} />
@@ -43,10 +49,16 @@
   {/if}
   <nav>
     {#each tabs as t (t.id)}
-      <button class:active={tab === t.id} onclick={() => (tab = t.id)}>{t.label}</button>
+      <button class:active={tab === t.id} aria-current={tab === t.id ? 'page' : undefined} onclick={() => (tab = t.id)}>{t.label}</button>
     {/each}
   </nav>
+  {#if live.audio}
+    <!-- Audio level as a hairline along the header's bottom edge. -->
+    <span class="level" class:hit={live.audio.beat > 0.5} style="width: {Math.round(live.audio.level * 100)}%"></span>
+  {/if}
 </header>
+
+<ConfirmHost />
 
 {#if app.error}
   <div class="error" role="alert">
@@ -78,7 +90,23 @@
     z-index: 10;
     background: var(--bg-2);
     border-bottom: 1px solid var(--line);
-    padding: 0.5rem 0.75rem 0;
+    padding: 0.4rem 0.75rem 0;
+  }
+  /* Line the header up with the 900px content column on wide screens. */
+  header > :global(:not(.level)) {
+    max-width: 900px;
+    margin-inline: auto;
+  }
+  .level {
+    position: absolute;
+    left: 0;
+    bottom: -1px;
+    height: 2px;
+    background: var(--ok);
+    transition: width 50ms linear;
+  }
+  .level.hit {
+    background: var(--warn);
   }
   .bar {
     display: flex;
@@ -105,10 +133,10 @@
   }
   .master {
     display: grid;
-    grid-template-columns: 7rem 1fr;
+    grid-template-columns: 6.5rem 1fr;
     align-items: center;
     gap: 0.5rem;
-    margin: 0.4rem 0;
+    margin: 0.25rem 0 0.35rem;
     font-size: 0.85rem;
   }
   nav {

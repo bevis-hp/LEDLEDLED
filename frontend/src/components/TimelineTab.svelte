@@ -113,7 +113,7 @@
     onpointermove={(e) => scrubbing && seek(rulerBeat(e))}
     onpointerup={() => (scrubbing = false)}
   >
-    {#each Array.from({ length: Math.floor(app.show.timeline.lengthBeats / 4) + 1 }, (_, i) => i * 4) as b (b)}
+    {#each Array.from({ length: Math.ceil(app.show.timeline.lengthBeats / 4) }, (_, i) => i * 4) as b (b)}
       <span class="bar" style="left: {(b / app.show.timeline.lengthBeats) * 100}%">{b / 4 + 1}</span>
     {/each}
     <span class="head" style="left: {(live.timeline.pos / app.show.timeline.lengthBeats) * 100}%"></span>
