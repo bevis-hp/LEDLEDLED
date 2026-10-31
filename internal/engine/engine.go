@@ -90,6 +90,7 @@ func (e *Engine) Load(s *show.Show) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.clock.SetBPM(e.now(), e.plan.show.Tempo.BPM)
+	e.tr = transport{} // a newly loaded show starts stopped at beat 0
 	return nil
 }
 

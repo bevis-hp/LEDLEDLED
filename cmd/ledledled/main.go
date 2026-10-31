@@ -10,10 +10,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"ledledled/internal/engine"
+	"ledledled/internal/library"
 	"ledledled/internal/server"
 	"ledledled/internal/show"
 	"ledledled/internal/webui"
@@ -22,6 +24,7 @@ import (
 func main() {
 	configPath := flag.String("config", "show.json", "path to the show file (created if missing)")
 	listen := flag.String("listen", ":8080", "HTTP listen address for the web UI")
+	libDir := flag.String("library", "", "directory for saved shows/presets (default: <config dir>/library)")
 	debug := flag.Bool("debug", false, "verbose logging")
 	flag.Parse()
 
@@ -31,13 +34,20 @@ func main() {
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
 
-	if err := run(*configPath, *listen); err != nil {
+	if *libDir == "" {
+		*libDir = filepath.Join(filepath.Dir(*configPath), "library")
+	}
+	if err := run(*configPath, *listen, *libDir); err != nil {
 		slog.Error("fatal", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath, listen string) error {
+func run(configPath, listen, libDir string) error {
+	lib, err := library.New(libDir)
+	if err != nil {
+		return err
+	}
 	sh, err := show.Load(configPath)
 	if err != nil {
 		return err
@@ -56,7 +66,7 @@ func run(configPath, listen string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	srv := server.New(eng, configPath, webui.FS())
+	srv := server.New(eng, configPath, lib, webui.FS())
 	defer srv.Close()
 
 	httpSrv := &http.Server{Addr: listen, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}

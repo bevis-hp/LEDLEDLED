@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"path/filepath"
+
+	"ledledled/internal/fsutil"
 )
 
 // Load reads a show from path. A missing file yields Default().
@@ -26,34 +27,14 @@ func Load(path string) (*Show, error) {
 	return &s, nil
 }
 
-// Save writes the show atomically (temp file + rename) so a power cut
-// mid-write can't leave a corrupt config on the Pi's SD card.
+// Save writes the show atomically so a power cut mid-write can't leave a
+// corrupt config on the Pi's SD card.
 func Save(path string, s *Show) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, ".show-*.json")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(b); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return fsutil.WriteAtomic(path, b)
 }
 
 // Clone returns a deep copy via JSON round-trip (shows are small).

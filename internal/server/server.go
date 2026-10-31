@@ -18,6 +18,7 @@ import (
 	"ledledled/internal/audio"
 	"ledledled/internal/effects"
 	"ledledled/internal/engine"
+	"ledledled/internal/library"
 	"ledledled/internal/output"
 	"ledledled/internal/pixel"
 	"ledledled/internal/show"
@@ -28,6 +29,7 @@ import (
 type Server struct {
 	eng   *engine.Engine
 	saver *saver
+	lib   *library.Store
 	ui    fs.FS
 
 	mu      sync.Mutex
@@ -40,11 +42,13 @@ type client struct {
 	text chan []byte // JSON messages (show updates)
 }
 
-// New creates a server. showPath is where changes are persisted.
-func New(eng *engine.Engine, showPath string, ui fs.FS) *Server {
+// New creates a server. showPath is where changes are persisted; lib holds
+// named shows and presets.
+func New(eng *engine.Engine, showPath string, lib *library.Store, ui fs.FS) *Server {
 	return &Server{
 		eng:     eng,
 		saver:   newSaver(showPath, 2*time.Second),
+		lib:     lib,
 		ui:      ui,
 		clients: map[*client]struct{}{},
 	}
@@ -67,6 +71,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tempo", s.postTempo)
 	mux.HandleFunc("POST /api/transport", s.postTransport)
 	mux.HandleFunc("GET /api/audio/devices", s.getAudioDevices)
+	mux.HandleFunc("GET /api/library/{kind}", s.libList)
+	mux.HandleFunc("GET /api/library/{kind}/{name}", s.libGet)
+	mux.HandleFunc("PUT /api/library/{kind}/{name}", s.libPut)
+	mux.HandleFunc("DELETE /api/library/{kind}/{name}", s.libDelete)
+	mux.HandleFunc("POST /api/library/shows/{name}/save", s.libSaveCurrent)
+	mux.HandleFunc("POST /api/library/shows/{name}/load", s.libLoad)
 	mux.HandleFunc("GET /ws", s.ws)
 	mux.Handle("/", s.static())
 	return logRequests(mux)
