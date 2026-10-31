@@ -1,0 +1,21 @@
+# Build output
+/bin/
+/dist/
+
+# Frontend build output is embedded into the Go binary at build time, but
+# not committed. The .gitkeep keeps go:embed happy on a fresh clone.
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep
+
+# Frontend deps
+node_modules/
+
+# Local runtime config / state
+/config.json
+/dev-config.json
+*.local.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
