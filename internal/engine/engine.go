@@ -8,8 +8,10 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
+	"os"
 	"sync"
 	"time"
 
@@ -44,10 +46,12 @@ type Engine struct {
 	blackout bool
 	identify map[string]time.Time // strip ID -> until
 
-	stats  map[string]*ctrlStats // by controller ID
-	fps    float64
-	frames int
-	fpsAt  time.Time
+	stats     map[string]*ctrlStats // by controller ID
+	fps       float64
+	frames    int
+	fpsAt     time.Time
+	frameMax  time.Duration // slowest frame in the current one-second window
+	slowestMs float64       // slowest frame in the last complete window
 
 	subMu sync.Mutex
 	subs  map[chan Message]struct{}
@@ -59,7 +63,14 @@ type ctrlStats struct {
 	packets uint64
 	errors  uint64
 	lastErr string
+	// Packets skipped because the link couldn't take them in time.
+	dropped       uint64
+	droppedLogged uint64
+	dropLogAt     time.Time
 }
+
+// dropLogEvery rate-limits the "output stalled" log line per controller.
+const dropLogEvery = 10 * time.Second
 
 // New creates an engine for s, which must already have passed Prepare.
 func New(s *show.Show) (*Engine, error) {
@@ -239,6 +250,7 @@ func (e *Engine) Run(ctx context.Context) {
 
 // frame renders and sends one frame.
 func (e *Engine) frame(now time.Time, preview bool) {
+	start := time.Now()
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	p := e.plan
@@ -252,6 +264,10 @@ func (e *Engine) frame(now time.Time, preview bool) {
 
 	e.encode(p)
 	if e.outputOn {
+		// Never let a stalled link hold up the loop for long: drop the rest
+		// of this frame instead, as the next one will be fresher anyway.
+		budget := time.Second / time.Duration(max(1, p.show.Settings.FPS)) / 2
+		_ = e.tx.SetWriteDeadline(time.Now().Add(budget))
 		e.send(p)
 	}
 	if preview {
@@ -260,9 +276,11 @@ func (e *Engine) frame(now time.Time, preview bool) {
 	}
 
 	e.frames++
+	e.frameMax = max(e.frameMax, time.Since(start))
 	if el := now.Sub(e.fpsAt); el >= time.Second {
 		e.fps = float64(e.frames) / el.Seconds()
-		e.frames, e.fpsAt = 0, now
+		e.slowestMs = float64(e.frameMax) / float64(time.Millisecond)
+		e.frames, e.fpsAt, e.frameMax = 0, now, 0
 		rollPowerWindow(p)
 	}
 }
@@ -446,6 +464,15 @@ func (e *Engine) send(p *plan) {
 		st := e.statsFor(c.id)
 		for u := range c.universes {
 			err := e.tx.Send(c.proto, c.dst, uint16(c.startUniverse+u), c.universeData(u))
+			if errors.Is(err, os.ErrDeadlineExceeded) {
+				st.dropped++
+				if time.Since(st.dropLogAt) >= dropLogEvery {
+					slog.Warn("output stalled, dropping packets (Wi-Fi link congested or driver stalled)",
+						"controller", c.id, "dropped", st.dropped-st.droppedLogged)
+					st.dropLogAt, st.droppedLogged = time.Now(), st.dropped
+				}
+				continue
+			}
 			if err != nil {
 				st.errors++
 				if st.lastErr != err.Error() {
@@ -462,6 +489,7 @@ func (e *Engine) send(p *plan) {
 
 // terminateLocked sends sACN stream-terminated packets to every universe.
 func (e *Engine) terminateLocked() {
+	_ = e.tx.SetWriteDeadline(time.Now().Add(250 * time.Millisecond))
 	for _, c := range e.plan.controllers {
 		for u := range c.universes {
 			_ = e.tx.Terminate(c.proto, c.dst, uint16(c.startUniverse+u), c.universeData(u))
@@ -578,6 +606,7 @@ type Status struct {
 	OutputOn    bool               `json:"outputOn"`
 	Blackout    bool               `json:"blackout"`
 	FPS         float64            `json:"fps"`
+	SlowestMs   float64            `json:"slowestFrameMs"` // slowest frame (render + send) in the last second
 	BPM         float64            `json:"bpm"`
 	Beat        float64            `json:"beat"`
 	Controllers []ControllerStatus `json:"controllers"`
@@ -602,6 +631,7 @@ type ControllerStatus struct {
 	Channels     int      `json:"channels"`
 	Packets      uint64   `json:"packets"`
 	Errors       uint64   `json:"errors"`
+	Dropped      uint64   `json:"dropped"` // packets skipped because the link stalled
 	LastError    string   `json:"lastError,omitempty"`
 	Warnings     []string `json:"warnings,omitempty"`
 }
@@ -610,13 +640,13 @@ type ControllerStatus struct {
 func (e *Engine) Status() Status {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	s := Status{Version: e.version, OutputOn: e.outputOn, Blackout: e.blackout, FPS: e.fps,
+	s := Status{Version: e.version, OutputOn: e.outputOn, Blackout: e.blackout, FPS: e.fps, SlowestMs: e.slowestMs,
 		BPM: e.clock.BPM(), Beat: e.clock.Beat(e.now()), Audio: e.audio.Status()}
 	for _, c := range e.plan.controllers {
 		st := e.statsFor(c.id)
 		s.Controllers = append(s.Controllers, ControllerStatus{
 			ID: c.id, Universes: c.universes, UniverseSize: c.universeSize, Channels: c.channels,
-			Packets: st.packets, Errors: st.errors, LastError: st.lastErr, Warnings: c.warnings,
+			Packets: st.packets, Errors: st.errors, Dropped: st.dropped, LastError: st.lastErr, Warnings: c.warnings,
 		})
 	}
 	for _, sp := range e.plan.strips {

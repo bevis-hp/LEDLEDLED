@@ -139,7 +139,7 @@ Command-line flags:
 
 ## Setting up the Raspberry Pi
 
-Tested target: **Raspberry Pi 4, Raspberry Pi OS Bookworm 64-bit (Lite is fine)**,
+Tested target: **Raspberry Pi 4 or 5, Raspberry Pi OS Bookworm 64-bit (Lite is fine)**,
 plus a USB Wi-Fi stick that supports **AP mode**.
 
 1. **Flash the SD card** with Raspberry Pi Imager. In its settings, set the
@@ -454,7 +454,8 @@ files in and out of the library folder directly over SSH.
 | Audio meters flat | Raise capture gain in `alsamixer`, check the input is line-level and the right input is selected; try the `sim` device to rule out the software. |
 | Strip shows "limited" all the time | Max amps lower than the look needs: raise it (if your supply allows) or lower brightness. |
 | ⚠ Pi / "under-voltage" in System | The Pi's 5 V supply sags: use an official 5.1 V / 3 A supply. Don't feed the Pi from the LED supply without a proper regulator, and keep its supply away from the LED current path. "Since boot" means it happened at least once. |
-| Choppy on Wi-Fi | Lower the FPS in Setup (25–30 is plenty), move the pixel AP channel (`PIX_CHANNEL=1` or `11`), keep the USB stick away from the Pi's metal case/USB3 ports. |
+| Choppy on Wi-Fi | Lower the FPS in Setup (25–30 is plenty), move the pixel AP channel (`PIX_CHANNEL=1` or `11`), keep the USB stick in a black USB 2 port and away from the Pi's metal case: USB 3 ports radiate noise in the 2.4 GHz band. |
+| LEDs freeze for a moment, then jump ahead | The pixel link stalled. Setup shows **N dropped** on the controller and the log says "output stalled" (`journalctl -u ledledled -f`); the render loop skips the stuck frames rather than queueing them. Check `sudo dmesg -w` for USB Wi-Fi driver errors (e.g. `rtw88 … failed to get tx report`) as freezes happen, try the tips above, and use a well-supported AP-mode stick (MediaTek MT7612U/MT7921AU) if it persists. Realtek rtw88 sticks (TP-Link Archer T3U / T3U Plus) are switched to USB 3 mode by the driver, which jams 2.4 GHz: `setup-network.sh` turns that off (`options rtw88_usb switch_usb_mode=N`), and `lsusb -t` should then show the stick at `480M`, not `5000M`. If **dropped** stays at 0, hover the fps in the header: a large *slowest frame* points at the Pi itself; a small one means packets leave the Pi on time and are delayed over the air. |
 
 ## Project layout
 
@@ -488,7 +489,7 @@ schema automatically, with no frontend changes needed.
 | `GET /api/show`       | the full show JSON |
 | `PUT /api/show`       | replace the show. Validated, applied live, saved after 2 s idle. `422` with `{"error": ...}` if invalid |
 | `GET /api/meta`       | effects with parameter schemas, colour orders, blend modes, protocols, easings, modulation sources, built-in palettes |
-| `GET /api/status`     | fps, output/blackout state, per-controller packets/errors/warnings |
+| `GET /api/status`     | fps, slowest frame, output/blackout state, per-controller packets/errors/dropped/warnings |
 | `POST /api/output`    | `{"on": bool}` start/stop sending (stop = sACN stream-terminate) |
 | `POST /api/blackout`  | `{"on": bool}` |
 | `POST /api/identify`  | `{"stripId": "...", "seconds": 6}` |

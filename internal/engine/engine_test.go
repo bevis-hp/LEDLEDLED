@@ -285,3 +285,31 @@ func TestPaletteEffectsAndDeletedPaletteFallback(t *testing.T) {
 		t.Error("expected error for reserved palette id")
 	}
 }
+
+// A stalled link (send deadline passed) counts as dropped packets, not
+// errors, and the next frame sends normally again.
+func TestStalledSendCountsAsDropped(t *testing.T) {
+	s, rx := testShow(t)
+	e, err := New(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.SetOutput(true)
+
+	e.mu.Lock()
+	_ = e.tx.SetWriteDeadline(time.Now().Add(-time.Millisecond))
+	e.send(e.plan)
+	e.mu.Unlock()
+	st := e.Status().Controllers[0]
+	if st.Dropped != 1 || st.Errors != 0 || st.Packets != 0 {
+		t.Fatalf("after stall: dropped=%d errors=%d packets=%d, want 1/0/0", st.Dropped, st.Errors, st.Packets)
+	}
+
+	e.frame(time.Now(), false)
+	if u, _ := readUniverse(t, rx); u != 3 {
+		t.Fatalf("universe %d after recovery, want 3", u)
+	}
+	if st := e.Status().Controllers[0]; st.Packets != 1 {
+		t.Fatalf("packets after recovery = %d, want 1", st.Packets)
+	}
+}

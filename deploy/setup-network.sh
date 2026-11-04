@@ -46,6 +46,7 @@ if [[ "${1:-}" == "--remove" ]]; then
   nmcli connection delete ledledled-pix 2>/dev/null || true
   rm -f /etc/NetworkManager/dnsmasq-shared.d/ledledled.conf
   rm -f /etc/systemd/system/ledledled.service.d/portal.conf
+  rm -f /etc/modprobe.d/ledledled-rtw88.conf
   systemctl daemon-reload
   echo "Removed LEDLEDLED access points."
   exit 0
@@ -58,7 +59,7 @@ if (( ${#UI_PASS} < 8 || ${#PIX_PASS} < 8 )); then
 fi
 
 # Find the onboard (brcmfmac) and USB radios.
-onboard="" usb=""
+onboard="" usb="" usb_driver=""
 for dev in /sys/class/net/wlan*; do
   [[ -e "$dev" ]] || continue
   name=$(basename "$dev")
@@ -66,7 +67,7 @@ for dev in /sys/class/net/wlan*; do
   if [[ "$driver" == "brcmfmac" ]]; then
     onboard=$name
   else
-    usb=$name
+    usb=$name usb_driver=$driver
   fi
 done
 [[ -n "$onboard" ]] || { echo "Onboard Wi-Fi (brcmfmac) not found." >&2; exit 1; }
@@ -81,6 +82,14 @@ echo "USB radio:     $usb ($usb_mac) -> pixel AP '$PIX_SSID' on $PIX_ADDR"
 phy=$(basename "$(readlink -f "/sys/class/net/$usb/phy80211")")
 if command -v iw >/dev/null && ! iw phy "$phy" info | sed -n '/Supported interface modes/,/:$/p' | grep -q '\* AP$'; then
   echo "WARNING: $usb does not report AP mode support; the pixel AP may fail." >&2
+fi
+
+# Realtek rtw88 sticks (e.g. TP-Link Archer T3U / T3U Plus, RTL8822BU) get
+# switched into USB 3 mode by the driver, which radiates noise in the very
+# 2.4 GHz band the pixel AP uses. USB 2 is far more bandwidth than DMX needs.
+if [[ "$usb_driver" == rtw88_* ]]; then
+  echo "options rtw88_usb switch_usb_mode=N" > /etc/modprobe.d/ledledled-rtw88.conf
+  echo "$usb_driver: disabled USB 3 mode (takes effect after replugging the stick or rebooting)."
 fi
 
 iw reg set "$COUNTRY" 2>/dev/null || true

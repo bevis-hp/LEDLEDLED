@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"sync"
+	"time"
 )
 
 // Transmitter owns a single UDP socket and sends sACN/Art-Net packets to
@@ -108,6 +109,11 @@ func (t *Transmitter) send(proto Protocol, dst netip.AddrPort, universe uint16, 
 	_, err := t.conn.WriteToUDPAddrPort(pkt, dst)
 	return err
 }
+
+// SetWriteDeadline bounds how long sends may block. When a Wi-Fi link
+// stalls the kernel's send buffer fills and writes would otherwise wait for
+// it; past the deadline they fail with os.ErrDeadlineExceeded instead.
+func (t *Transmitter) SetWriteDeadline(d time.Time) error { return t.conn.SetWriteDeadline(d) }
 
 // Close releases the socket.
 func (t *Transmitter) Close() error { return t.conn.Close() }

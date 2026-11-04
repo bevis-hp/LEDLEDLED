@@ -160,6 +160,7 @@
           {c.startUniverse}{st?.universes > 1 ? `–${c.startUniverse + st.universes - 1}` : ''}
           {#if st}· {st.channels} ch{/if}
           {#if st?.errors}<span class="err"> · {st.errors} errors</span>{/if}
+          {#if st?.dropped}<span class="warn" title="Packets skipped because the network link stalled"> · {st.dropped} dropped</span>{/if}
           {#if st?.warnings?.length}<span class="warn"> · ⚠ too many pixels</span>{/if}
         </p>
       {:else}
@@ -198,6 +199,7 @@
           ({c.protocol === 'artnet' ? 'port-address' : 'universe'} {c.startUniverse}–{c.startUniverse + Math.max(st.universes - 1, 0)})
           × {st.universeSize} ch · {st.channels} channels used · {st.packets} packets
           {#if st.errors}<span class="err"> · {st.errors} errors</span>{/if}
+          {#if st.dropped}<span class="warn" title="Packets skipped because the network link stalled"> · {st.dropped} dropped</span>{/if}
         </p>
         {#if st.lastError}<p class="err">{st.lastError}</p>{/if}
         {#each st.warnings ?? [] as w}<p class="warn">⚠ {w}</p>{/each}

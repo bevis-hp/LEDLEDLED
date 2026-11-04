@@ -25,7 +25,7 @@
   <div class="bar">
     <h1>LEDLEDLED</h1>
     <span class="dot" class:ok={app.connected} title={app.connected ? 'Connected' : 'Disconnected'}></span>
-    {#if app.status}<span class="fps">{app.status.fps.toFixed(0)} fps</span>{/if}
+    {#if app.status}<span class="fps" title="Slowest frame in the last second: {app.status.slowestFrameMs?.toFixed(1) ?? '?'} ms">{app.status.fps.toFixed(0)} fps</span>{/if}
     {#if app.status?.system?.throttle?.underVoltageNow || app.status?.system?.cpuTempC >= 80}
       <button class="small alert" title="The Pi is under-volted or too hot: see Setup → System" onclick={() => (tab = 'setup')}>⚠ Pi</button>
     {/if}

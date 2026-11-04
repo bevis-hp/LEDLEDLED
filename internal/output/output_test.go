@@ -3,8 +3,10 @@ package output
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"net"
 	"net/netip"
+	"os"
 	"testing"
 	"time"
 )
@@ -120,5 +122,32 @@ func TestTransmitterLoopback(t *testing.T) {
 		if n != 127 || buf[111] != byte(i) || buf[126] != byte(i) {
 			t.Errorf("packet %d: n=%d seq=%d data=%d", i, n, buf[111], buf[126])
 		}
+	}
+}
+
+// TestTransmitterWriteDeadline checks that an expired deadline makes Send
+// fail fast with os.ErrDeadlineExceeded (as when a link stalls), and that a
+// fresh deadline lets sends through again.
+func TestTransmitterWriteDeadline(t *testing.T) {
+	rx, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rx.Close()
+	dst := netip.MustParseAddrPort(rx.LocalAddr().String())
+
+	tx, err := NewTransmitter(Options{SourceName: "deadline"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Close()
+
+	_ = tx.SetWriteDeadline(time.Now().Add(-time.Millisecond))
+	if err := tx.Send(SACN, dst, 1, []byte{1}); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatalf("expired deadline: err = %v, want os.ErrDeadlineExceeded", err)
+	}
+	_ = tx.SetWriteDeadline(time.Now().Add(time.Second))
+	if err := tx.Send(SACN, dst, 1, []byte{1}); err != nil {
+		t.Fatalf("fresh deadline: %v", err)
 	}
 }
