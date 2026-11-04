@@ -1,15 +1,19 @@
 <script>
   // A canvas lane for one keyframe track: draws the interpolated value
   // (a curve for numbers, a gradient for colours), the keys and the
-  // playhead. Drag keys to move them; tap empty space to seek.
+  // playhead. Drag keys to move them; tap empty space to seek; double-click
+  // (or double-tap) empty space to add a key.
   import { evalTrack, snapBeat } from '../lib/keyframes.js';
 
-  /** @type {{ track: any, length: number, pos: number, range?: [number, number], selected: number, snap: number, onselect: (i:number)=>void, onchange: ()=>void, onseek: (beat:number)=>void }} */
-  let { track, length, pos, range = [0, 1], selected, snap, onselect, onchange, onseek } = $props();
+  /** @type {{ track: any, length: number, pos: number, range?: [number, number], selected: number, snap: number, onselect: (i:number)=>void, onchange: ()=>void, onseek: (beat:number)=>void, onadd: (beat:number)=>void }} */
+  let { track, length, pos, range = [0, 1], selected, snap, onselect, onchange, onseek, onadd } = $props();
 
   let canvas;
   let drag = null; // index of the key being dragged
+  let lastTap = { t: 0, x: 0 }; // for double-tap detection (dblclick is unreliable on touch)
   const H = 44;
+  const DOUBLE_MS = 350;
+  const DOUBLE_PX = 12;
 
   const beatAt = (ev) => {
     const r = canvas.getBoundingClientRect();
@@ -27,11 +31,19 @@
       if (d < best) [hit, best] = [i, d];
     });
     if (hit >= 0) {
+      lastTap = { t: 0, x: 0 };
       onselect(hit);
       drag = hit;
       canvas.setPointerCapture(ev.pointerId);
+      return;
+    }
+    const beat = snapBeat(beatAt(ev), snap);
+    if (ev.timeStamp - lastTap.t < DOUBLE_MS && Math.abs(x - lastTap.x) < DOUBLE_PX) {
+      lastTap = { t: 0, x: 0 };
+      onadd(beat);
     } else {
-      onseek(snapBeat(beatAt(ev), snap));
+      lastTap = { t: ev.timeStamp, x };
+      onseek(beat);
     }
   }
 
@@ -90,6 +102,16 @@
         }
         ctx.stroke();
       }
+    } else {
+      const msg = 'Double-click to add a keyframe';
+      ctx.font = '12px system-ui, sans-serif';
+      const tw = ctx.measureText(msg).width + 16;
+      ctx.fillStyle = '#0c0e13';
+      ctx.fillRect((w - tw) / 2, H / 2 - 10, tw, 20);
+      ctx.fillStyle = '#6b7280';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(msg, w / 2, H / 2);
     }
 
     track.keys.forEach((k, i) => {

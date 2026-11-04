@@ -80,10 +80,7 @@
 </script>
 
 <section>
-  <div class="row">
-    <h2 class="grow">Your palettes</h2>
-    <button class="primary" onclick={() => newPalette()}>+ New palette</button>
-  </div>
+  <h2>Your palettes</h2>
   <p class="hint">
     Use a palette from any effect's <b>Palette</b> setting (Gradient, Noise, Sparkle, VU, Spectrum, Palette scroll). Tap the bar to add a
     colour stop, drag stops to move them, tap one to change its colour.
@@ -123,8 +120,14 @@
       {/if}
     </div>
   {:else}
-    <p class="hint">No palettes of your own yet. Start a new one or duplicate a built-in below.</p>
+    <div class="card empty">
+      <p>No palettes of your own yet.</p>
+      <p class="hint">Start a new one, or duplicate a built-in below.</p>
+    </div>
   {/each}
+  <div class="row">
+    <button class="primary" onclick={() => newPalette()}>+ New palette</button>
+  </div>
 </section>
 
 <section>
@@ -143,6 +146,9 @@
 </section>
 
 <style>
+  .empty p {
+    margin: 0.2rem 0;
+  }
   .name {
     font-weight: 600;
   }

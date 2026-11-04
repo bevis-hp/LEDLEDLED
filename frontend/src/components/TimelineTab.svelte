@@ -2,7 +2,7 @@
   // Timeline: one looping sequence measured in beats. Tracks animate layer
   // parameters between keyframes; the playhead follows the tempo.
   import { app, live, ui, save, transport } from '../lib/state.svelte.js';
-  import { setKey, evalTrack, removeTrack, snapBeat, findTrack } from '../lib/keyframes.js';
+  import { setKey, evalTrack, removeTrack, snapBeat, findTrack, keyIndexAt } from '../lib/keyframes.js';
   import TrackLane from './TrackLane.svelte';
 
   const snaps = [
@@ -51,7 +51,8 @@
     return snapBeat(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) * app.show.timeline.lengthBeats, ui.snap);
   }
 
-  // Quick-add: key any animatable parameter at the playhead.
+  // Add a track: pick a layer and an animatable parameter. Keys are then
+  // added by double-clicking the track's lane.
   let addLayer = $state('');
   let addParam = $state('opacity');
   let addParams = $derived.by(() => {
@@ -59,18 +60,34 @@
     const eff = app.meta?.effects.find((e) => e.name === l?.effect);
     return [opacityDef, ...(eff?.params.filter((p) => p.type === 'number' || p.type === 'color') ?? [])];
   });
-  function quickKey() {
-    const l = layerOf(addLayer);
-    if (!l) return;
-    const value = addParam === 'opacity' ? l.opacity : l.params[addParam];
-    setKey(app.show, l.id, addParam, snapBeat(live.timeline.pos, ui.snap), value);
+  let addValid = $derived(!!layerOf(addLayer) && addParams.some((p) => p.name === addParam));
+  let addExists = $derived(addValid && !!findTrack(app.show, addLayer, addParam));
+  function addTrack() {
+    if (!addValid || addExists) return;
+    app.show.timeline.tracks.push({ layerId: addLayer, param: addParam, keys: [] });
+    clearSel();
     save();
   }
 
+  // New keys take the track's current value at that beat (like palette
+  // stops), or the layer's own value when the track is still empty.
+  function addKey(t, beat) {
+    let value = evalTrack(t, beat);
+    if (value === undefined) {
+      const l = layerOf(t.layerId);
+      value = t.param === 'opacity' ? l?.opacity : (l?.params[t.param] ?? paramDef(t)?.default);
+    }
+    if (value === undefined) return;
+    if (typeof value === 'number') value = Math.round(value * 1000) / 1000;
+    setKey(app.show, t.layerId, t.param, beat, value);
+    const track = findTrack(app.show, t.layerId, t.param);
+    sel = { layerId: t.layerId, param: t.param, key: keyIndexAt(track, beat) };
+    save();
+  }
+
+  // Deleting the last key keeps the (now empty) track; use ✕ to remove it.
   function deleteKey() {
-    const t = selTrack;
-    t.keys.splice(sel.key, 1);
-    if (!t.keys.length) removeTrack(app.show, t);
+    selTrack.keys.splice(sel.key, 1);
     clearSel();
     save();
   }
@@ -123,16 +140,17 @@
 <section>
   <h2>Tracks</h2>
   <p class="hint">
-    Move the playhead, then press ◇ next to a parameter on the Live tab (or use the picker below) to add a keyframe. Once a
-    parameter has keys, changing it records a key at the playhead. Drag ◆ to move keys; tap a lane to seek.
+    Add a track for a layer parameter below, then double-click its lane to add a keyframe (it takes the value already at
+    that point). You can also press ◇ next to a parameter on the Live tab to key it at the playhead; once a parameter has
+    keys, changing it records a key at the playhead. Drag ◆ to move keys, tap one to edit it; tap a lane to seek.
   </p>
 
   {#each app.show.timeline.tracks as t (t.layerId + t.param)}
     {@const def = paramDef(t)}
-    <div class="track">
+    <div class="card track">
       <div class="row small">
         <span class="grow"><b>{layerOf(t.layerId)?.name ?? '?'}</b> › {def?.label ?? t.param}</span>
-        <span class="mono value">{(() => { const v = evalTrack(t, live.timeline.pos); return typeof v === 'number' ? v.toFixed(2) : v; })()}</span>
+        <span class="mono value">{(() => { const v = evalTrack(t, live.timeline.pos); return v === undefined ? '—' : typeof v === 'number' ? v.toFixed(2) : v; })()}</span>
         <button
           class="icon danger small"
           title="Delete track"
@@ -153,43 +171,46 @@
         onselect={(i) => (sel = { layerId: t.layerId, param: t.param, key: i })}
         onchange={save}
         onseek={seek}
+        onadd={(beat) => addKey(t, beat)}
       />
+      {#if isSel(t) && selKey}
+        <div class="row keyedit">
+          <label class="inline">beat <input type="number" min="0" max={app.show.timeline.lengthBeats} step={ui.snap || 0.01} bind:value={selKey.beat} onchange={() => { const k = selKey; selTrack.keys.sort((a, b) => a.beat - b.beat); sel.key = selTrack.keys.indexOf(k); save(); }} /></label>
+          {#if typeof selKey.value === 'string'}
+            <input type="color" bind:value={selKey.value} oninput={save} />
+            <span class="mono hint">{selKey.value}</span>
+          {:else}
+            <label class="inline">value <input type="number" step="any" min={selDef?.min} max={selDef?.max} bind:value={selKey.value} onchange={save} /></label>
+          {/if}
+          <label class="inline">
+            ease
+            <select bind:value={selKey.ease} onchange={save}>
+              {#each app.meta?.eases ?? [] as e (e)}<option value={e}>{e}</option>{/each}
+            </select>
+          </label>
+          <span class="spacer"></span>
+          <button class="small danger" onclick={deleteKey}>Delete key</button>
+        </div>
+      {/if}
     </div>
   {:else}
-    <p class="hint">No keyframes yet.</p>
+    <p class="hint">No tracks yet.</p>
   {/each}
-
-  {#if selKey}
-    <div class="card keyedit">
-      <b>Keyframe</b>
-      <label class="inline">beat <input type="number" min="0" max={app.show.timeline.lengthBeats} step={ui.snap || 0.01} bind:value={selKey.beat} onchange={() => { const k = selKey; selTrack.keys.sort((a, b) => a.beat - b.beat); sel.key = selTrack.keys.indexOf(k); save(); }} /></label>
-      {#if typeof selKey.value === 'string'}
-        <input type="color" bind:value={selKey.value} oninput={save} />
-      {:else}
-        <label class="inline">value <input type="number" step="any" min={selDef?.min} max={selDef?.max} bind:value={selKey.value} onchange={save} /></label>
-      {/if}
-      <label class="inline">
-        ease
-        <select bind:value={selKey.ease} onchange={save}>
-          {#each app.meta?.eases ?? [] as e (e)}<option value={e}>{e}</option>{/each}
-        </select>
-      </label>
-      <button class="danger" onclick={deleteKey}>Delete key</button>
-    </div>
-  {/if}
 </section>
 
 <section class="card">
-  <h3>Add a keyframe</h3>
+  <h3>Add a track</h3>
   <div class="row">
     <select bind:value={addLayer}>
       <option value="">Layer…</option>
       {#each app.show.layers as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
     </select>
     <select bind:value={addParam} disabled={!addLayer}>
-      {#each addParams as p (p.name)}<option value={p.name}>{p.label}</option>{/each}
+      {#each addParams as p (p.name)}
+        <option value={p.name}>{p.label}{addLayer && findTrack(app.show, addLayer, p.name) ? ' (has track)' : ''}</option>
+      {/each}
     </select>
-    <button disabled={!addLayer} onclick={quickKey}>◆ Key at playhead (current value)</button>
+    <button class="primary" disabled={!addValid || addExists} onclick={addTrack}>+ Add track</button>
   </div>
 </section>
 
@@ -226,17 +247,15 @@
     width: 2px;
     background: var(--accent);
   }
-  .track {
-    margin-bottom: 0.7rem;
+  .keyedit {
+    margin-top: 0.5rem;
+  }
+  .keyedit input[type='color'] {
+    width: 3rem;
+    height: 2.2rem;
   }
   .track .value {
     font-size: 0.75rem;
     color: var(--muted);
-  }
-  .keyedit {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.6rem;
   }
 </style>

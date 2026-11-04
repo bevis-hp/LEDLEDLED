@@ -244,8 +244,10 @@ Summarised from the AirPixel Mini II manual. Do this once per unit.
 
 ## Groups and palettes
 
-**Picking pixels.** On the Groups tab, choose or create a group, then drag
-across a strip to add that range as a section. To be exact:
+**Picking pixels.** The Groups tab lists every group as a card (like layers
+on the Live tab); add one with **+ New group** at the bottom of the list and
+collapse cards with ▾ to keep things tidy. Drag across a strip inside a
+group's card to add that range as a section. To be exact:
 
 - **Zoom** with − / + (or *fit*), **pinch** with two fingers, or ctrl/⌘ +
   scroll (or pinch on a trackpad). Zoom goes up to roughly 48 screen pixels
@@ -256,7 +258,8 @@ across a strip to add that range as a section. To be exact:
 - Fine-tune the numbers in the *Sections* list (from / to / reverse).
 
 **Palettes.** On the Palettes tab, duplicate a built-in or start a new
-palette. Tap the bar to add a colour stop (it starts with the colour already
+palette with **+ New palette** at the bottom of your list. Tap the bar to
+add a colour stop (it starts with the colour already
 at that point), drag stops to move them, and tap a stop to change its colour
 or position. To use one, pick it in an effect's **Palette** setting:
 
@@ -286,18 +289,22 @@ follows tap tempo and auto-BPM.
 = 4 bars), so it also follows the tempo. Use ▶ / ❚❚ / ■ in the header or the
 Timeline tab.
 
-To animate a parameter:
+To animate a parameter on the Timeline tab:
 
-1. Move the playhead: drag the ruler on the Timeline tab, or pause where you want.
-2. On the Live tab, press **◇** next to the parameter. That stores a key with
-   the current value at the playhead, snapped to the grid (Snap: ¼ beat by
-   default).
-3. Move the playhead and change the slider. Once a parameter has keys,
-   editing it **records a key at the playhead**, as in After Effects. Its
-   label turns amber and the slider shows the animated value.
-4. On the Timeline tab, drag ◆ to retime keys, and tap one to edit its beat,
-   value or **easing** (`linear`, `smooth`, `in`, `out`, `step`). Easing
-   applies from that key to the next.
+1. Under **Add a track**, pick a layer and parameter and press **+ Add track**.
+2. **Double-click** (or double-tap) the track's lane to add a keyframe there,
+   snapped to the grid (Snap: ¼ beat by default). Like palette stops, a new
+   key takes the value already at that point (the layer's current value on
+   an empty track).
+3. Drag ◆ to retime keys, and tap one to edit its beat, value or **easing**
+   (`linear`, `smooth`, `in`, `out`, `step`). Easing applies from that key to
+   the next. Tap an empty part of a lane (or drag the ruler) to move the
+   playhead. Deleting a track's last key keeps the empty track; ✕ removes it.
+
+You can also key from the Live tab: move the playhead, then press **◇** next
+to a parameter to store a key with the current value at the playhead. Once a
+parameter has keys, editing it **records a key at the playhead**, as in After
+Effects. Its label turns amber and the slider shows the animated value.
 
 Colours, numbers and layer opacity can be keyed. If a layer is deleted or
 its effect is changed, tracks for parameters that no longer exist are
