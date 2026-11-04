@@ -11,7 +11,7 @@
 # names can swap between boots when a USB stick is present.
 #
 # Override any setting with environment variables, e.g.
-#   sudo UI_PASS=supersecret PIX_PASS=pixelpass ./setup-network.sh
+#   sudo UI_PASS=supersecret PIX_PASS=pixelpass deploy/setup-network.sh
 #
 # Run with --remove to delete the two connections again.
 set -euo pipefail

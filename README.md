@@ -147,22 +147,51 @@ plus a USB Wi-Fi stick that supports **AP mode**.
    Connect the Pi to your router by **Ethernet** for setup, because the
    network script takes over both Wi-Fi radios.
 
-2. **Install the app** from your computer:
+   Everything below runs **in a terminal on the Pi**: `ssh youruser@ledpi.local`
+   or a Raspberry Pi Connect remote shell.
+
+2. **Install the build tools** (once). Bookworm's own Go and Node packages
+   are too old, so this installs current releases:
 
    ```sh
-   make install-pi PI_HOST=youruser@ledpi.local
+   sudo apt update
+   sudo apt install -y git gh make curl alsa-utils
+
+   # Go 1.24+
+   GO=$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -1)
+   curl -fsSLO "https://go.dev/dl/$GO.linux-arm64.tar.gz"
+   sudo rm -rf /usr/local/go && sudo tar -C /usr/local -xzf "$GO.linux-arm64.tar.gz"
+   rm "$GO.linux-arm64.tar.gz"
+   echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.profile && source ~/.profile
+
+   # Node 22
+   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+   sudo apt install -y nodejs
+
+   go version && node --version   # check
    ```
 
-   This cross-compiles for `linux/arm64`, copies the binary and systemd unit,
-   and enables the `ledledled` service. The show file lives in
-   `/var/lib/ledledled/show.json`.
-
-3. **Set up the two access points** (USB stick plugged in):
+3. **Get the code and install the app**:
 
    ```sh
-   make network-pi PI_HOST=youruser@ledpi.local
-   ssh youruser@ledpi.local
-   sudo UI_PASS='choose-a-password' PIX_PASS='another-password' ./setup-network.sh
+   gh auth login                  # GitHub.com, HTTPS, "Yes" to authenticate Git
+   gh repo clone youruser/LEDLEDLED ~/LEDLEDLED
+   cd ~/LEDLEDLED
+   make install
+   ```
+
+   `gh auth login` shows a one-time code to enter at github.com/login/device
+   on your phone or laptop (skip it if the repo is public). `make install`
+   builds the UI and the binary on the Pi (a few minutes the first time),
+   then installs and starts the `ledledled` systemd service. The show file
+   lives in `/var/lib/ledledled/show.json`.
+
+4. **Set up the two access points** (USB stick plugged in, Pi on Ethernet:
+   a session over Wi-Fi will drop when the radios switch over):
+
+   ```sh
+   cd ~/LEDLEDLED
+   sudo UI_PASS='choose-a-password' PIX_PASS='another-password' deploy/setup-network.sh
    ```
 
    Defaults (all overridable with environment variables, see the top of
@@ -174,7 +203,7 @@ plus a USB Wi-Fi stick that supports **AP mode**.
    | Pixels           | `LEDLEDLED-PIX` | `ledpixels` | `10.43.0.1` | USB stick, 2.4 GHz ch 6 |
 
    If a phone can't see the 5 GHz UI network, re-run with `UI_BAND=bg UI_CHANNEL=1`.
-   `sudo ./setup-network.sh --remove` undoes it.
+   `sudo deploy/setup-network.sh --remove` undoes it.
 
    **Captive portal** (on by default, `CAPTIVE=0` to turn off): the networks'
    DNS answers every name with the Pi. Phones then detect a "sign-in" network
@@ -185,11 +214,21 @@ plus a USB Wi-Fi stick that supports **AP mode**.
    drop-in (`/etc/systemd/system/ledledled.service.d/portal.conf`) that points
    the app at the right address.
 
-4. **Open the UI**: join `LEDLEDLED` on your phone. The controller should pop
+5. **Open the UI**: join `LEDLEDLED` on your phone. The controller should pop
    up by itself. If it doesn't, browse to **http://10.42.0.1** (or
    **http://led.lan**).
 
-Updating later is just `make deploy PI_HOST=...`. Logs are available with
+**Updating** (on the Pi, with Ethernet plugged in so it can reach GitHub,
+Go and npm):
+
+```sh
+cd ~/LEDLEDLED
+git pull
+make install
+```
+
+Once the access points are up you can also SSH in from the `LEDLEDLED`
+network with `ssh youruser@10.42.0.1`. Logs are available with
 `journalctl -u ledledled -f`.
 
 **Keeping an eye on it.** Setup → *System* shows the Pi's CPU temperature,
